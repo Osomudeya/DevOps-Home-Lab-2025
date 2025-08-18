@@ -1,0 +1,31 @@
+# version: '3.8'
+
+services:
+  backend:
+    environment:
+      NODE_ENV: production
+      FRONTEND_URL: https://gameapp.games
+      API_BASE_URL: https://gameapp.games
+      CORS_ORIGIN: https://gameapp.games
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  frontend:
+    environment:
+      NODE_ENV: production
+      REACT_APP_API_BASE_URL: https://gameapp.games
+
+  nginx:
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/nginx/ssl:ro
+    environment:
+      DOMAIN_NAME: gameapp.games
+
+networks:
+  default:
+    name: humor-game-prod

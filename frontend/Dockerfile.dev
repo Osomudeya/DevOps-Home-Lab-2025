@@ -1,0 +1,20 @@
+# Development Dockerfile for Frontend - Simple Static File Server
+FROM python:3.9-alpine
+
+WORKDIR /app
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy source code
+COPY . .
+
+# Expose port for development server
+EXPOSE 3000
+
+# Health check for development server
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/ || exit 1
+
+# Start development server (serves files from src directory)
+CMD ["python3", "-m", "http.server", "3000", "--directory", "src"]

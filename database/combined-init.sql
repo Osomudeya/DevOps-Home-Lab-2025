@@ -1,0 +1,146 @@
+-- Fixed Humor Memory Game Database Schema
+-- This file creates the schema and seeds data
+
+-- Enable UUID extension for generating unique IDs
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Drop tables if they exist (for clean reset)
+DROP TABLE IF EXISTS game_matches CASCADE;
+DROP TABLE IF EXISTS games CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP VIEW IF EXISTS leaderboard;
+
+-- Create users table
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE,
+    display_name VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_played TIMESTAMP WITH TIME ZONE,
+    total_games INTEGER DEFAULT 0,
+    total_score INTEGER DEFAULT 0,
+    best_score INTEGER DEFAULT 0,
+    best_time INTEGER, -- in milliseconds
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Create games table to track individual game sessions
+CREATE TABLE games (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    username VARCHAR(50) NOT NULL, -- denormalized for faster queries
+    score INTEGER NOT NULL DEFAULT 0,
+    moves INTEGER NOT NULL DEFAULT 0,
+    time_elapsed INTEGER NOT NULL DEFAULT 0, -- in milliseconds - FIXED: Added DEFAULT
+    cards_matched INTEGER NOT NULL DEFAULT 0,
+    difficulty_level VARCHAR(20) DEFAULT 'easy', -- easy, medium, hard, expert
+    game_completed BOOLEAN DEFAULT false,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    game_data JSONB -- store card positions, matches, etc.
+);
+
+-- Create game_matches table to track individual card matches
+CREATE TABLE game_matches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+    card1_id VARCHAR(50) NOT NULL,
+    card2_id VARCHAR(50) NOT NULL,
+    match_time INTEGER NOT NULL, -- time when match was made (ms from game start)
+    points_earned INTEGER DEFAULT 10,
+    bonus_points INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create leaderboard view for easy querying
+CREATE OR REPLACE VIEW leaderboard AS
+SELECT 
+    u.username,
+    u.display_name,
+    u.total_games,
+    u.total_score,
+    u.best_score,
+    u.best_time,
+    u.last_played,
+    CASE 
+        WHEN u.total_games > 0 THEN ROUND(u.total_score::decimal / u.total_games, 2)
+        ELSE 0 
+    END as avg_score,
+    ROW_NUMBER() OVER (ORDER BY u.best_score DESC, u.best_time ASC) as rank
+FROM users u
+WHERE u.is_active = true AND u.total_games > 0
+ORDER BY u.best_score DESC, u.best_time ASC;
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_best_score ON users(best_score DESC);
+CREATE INDEX IF NOT EXISTS idx_users_last_played ON users(last_played);
+CREATE INDEX IF NOT EXISTS idx_games_user_id ON games(user_id);
+CREATE INDEX IF NOT EXISTS idx_games_score ON games(score DESC);
+CREATE INDEX IF NOT EXISTS idx_games_completed_at ON games(completed_at);
+CREATE INDEX IF NOT EXISTS idx_game_matches_game_id ON game_matches(game_id);
+
+-- Create function to update user stats when a game is completed
+CREATE OR REPLACE FUNCTION update_user_stats()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Only update if game is being marked as completed
+    IF NEW.game_completed = true AND (OLD.game_completed = false OR OLD.game_completed IS NULL) THEN
+        UPDATE users 
+        SET 
+            total_games = total_games + 1,
+            total_score = total_score + NEW.score,
+            best_score = GREATEST(best_score, NEW.score),
+            best_time = CASE 
+                WHEN best_time IS NULL OR NEW.time_elapsed < best_time 
+                THEN NEW.time_elapsed 
+                ELSE best_time 
+            END,
+            last_played = NEW.completed_at,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = NEW.user_id;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to automatically update user stats
+DROP TRIGGER IF EXISTS trigger_update_user_stats ON games;
+CREATE TRIGGER trigger_update_user_stats
+    AFTER UPDATE ON games
+    FOR EACH ROW
+    EXECUTE FUNCTION update_user_stats();
+
+-- Grant permissions to the game user
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO gameuser;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO gameuser;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO gameuser;
+
+-- Insert sample users with funny usernames
+INSERT INTO users (username, email, display_name, total_games, total_score, best_score, best_time, last_played) VALUES
+    ('memorymaster42', 'master@example.com', '🧠 Memory Master', 15, 2340, 200, 45000, CURRENT_TIMESTAMP - INTERVAL '2 hours'),
+    ('cardshark_jenny', 'jenny@example.com', '🦈 Card Shark Jenny', 12, 1890, 180, 52000, CURRENT_TIMESTAMP - INTERVAL '1 day'),
+    ('emoji_ninja', 'ninja@example.com', '🥷 Emoji Ninja', 8, 1440, 190, 48000, CURRENT_TIMESTAMP - INTERVAL '3 hours'),
+    ('laugh_machine', 'laugh@example.com', '😂 Laugh Machine', 20, 2800, 175, 55000, CURRENT_TIMESTAMP - INTERVAL '30 minutes'),
+    ('puzzle_pirate', 'pirate@example.com', '🏴‍☠️ Puzzle Pirate', 6, 780, 150, 62000, CURRENT_TIMESTAMP - INTERVAL '2 days'),
+    ('memory_mango', 'mango@example.com', '🥭 Memory Mango', 10, 1500, 165, 58000, CURRENT_TIMESTAMP - INTERVAL '5 hours'),
+    ('giggle_guru', 'guru@example.com', '🤓 Giggle Guru', 18, 2520, 185, 47000, CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+    ('chuckle_champ', 'champ@example.com', '🏆 Chuckle Champ', 14, 2100, 170, 51000, CURRENT_TIMESTAMP - INTERVAL '4 hours')
+ON CONFLICT (username) DO NOTHING;
+
+-- Success message
+DO $$
+BEGIN
+    RAISE NOTICE '🎮 ========================================';
+    RAISE NOTICE '🎯 HUMOR MEMORY GAME DATABASE READY! 😂';
+    RAISE NOTICE '🎮 ========================================';
+    RAISE NOTICE 'Schema created: users, games, game_matches';
+    RAISE NOTICE 'Views created: leaderboard';
+    RAISE NOTICE 'Functions created: update_user_stats';
+    RAISE NOTICE 'Sample data inserted: 8 funny users';
+    RAISE NOTICE '🚀 Ready for some hilarious memory gaming! 🃏✨';
+    RAISE NOTICE '🎮 ========================================';
+END $$;

@@ -1,0 +1,239 @@
+# version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: humor-game-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-humor_memory_game}
+      POSTGRES_USER: ${DB_USER:-gameuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gamepass123}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/combined-init.sql:/docker-entrypoint-initdb.d/01-combined-init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-gameuser} -d ${DB_NAME:-humor_memory_game}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: humor-game-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-gamepass123}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-gamepass123}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: humor-game-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${API_PORT:-3001}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-humor_memory_game}
+      DB_USER: ${DB_USER:-gameuser}
+      DB_PASSWORD: ${DB_PASSWORD:-gamepass123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-gamepass123}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+    ports:
+      - "${API_PORT:-3001}:${API_PORT:-3001}"
+    networks:
+      - backend-network
+      - frontend-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${API_PORT:-3001}/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # Frontend Web App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: humor-game-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      REACT_APP_API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
+    ports:
+      - "3000:80"
+    networks:
+      - frontend-network
+    depends_on:
+      backend:
+        condition: service_started 
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: humor-game-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - frontend-network
+    depends_on:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  frontend-network:
+    driver: bridge
+  backend-network:
+    driver: bridge
+
+
+
+# version: '3.8'
+
+# services:
+#   # Frontend - Vanilla JS with Nginx
+#   frontend:
+#     build: 
+#       context: ./frontend
+#       dockerfile: Dockerfile
+#     ports:
+#       - "3000:80"
+#     depends_on:
+#       - backend
+#     environment:
+#       - REACT_APP_API_URL=http://localhost:3001/api
+#     volumes:
+#       - ./frontend/src:/app/src:ro
+#     networks:
+#       - humor-game-network
+
+#   # Backend - Node.js API
+#   backend:
+#     build:
+#       context: ./backend
+#       dockerfile: Dockerfile
+#     ports:
+#       - "3001:3001"
+#     environment:
+#       - NODE_ENV=development
+#       - PORT=3001
+#       - DB_HOST=postgres
+#       - DB_PORT=5432
+#       - DB_NAME=humor_memory_game
+#       - DB_USER=gameuser
+#       - DB_PASSWORD=gamepass123
+#       - REDIS_HOST=redis
+#       - REDIS_PORT=6379
+#       - CORS_ORIGIN=http://localhost:3000
+#     depends_on:
+#       - postgres
+#       - redis
+#     volumes:
+#       - ./backend:/app
+#       - /app/node_modules
+#     command: npm run dev
+#     networks:
+#       - humor-game-network
+
+#   # PostgreSQL Database
+#   postgres:
+#     image: postgres:15-alpine
+#     environment:
+#       POSTGRES_DB: humor_memory_game
+#       POSTGRES_USER: gameuser
+#       POSTGRES_PASSWORD: gamepass123
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data
+#       - ./database/combined-init.sql:/docker-entrypoint-initdb.d/01-combined-init.sql
+#     networks:
+#       - humor-game-network
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U gameuser -d humor_memory_game"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
+
+#   # Redis Cache
+#   redis:
+#     image: redis:7-alpine
+#     ports:
+#       - "6379:6379"
+#     volumes:
+#       - redis_data:/data
+#     networks:
+#       - humor-game-network
+#     healthcheck:
+#       test: ["CMD", "redis-cli", "ping"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
+#     command: redis-server --appendonly yes
+
+# networks:
+#   humor-game-network:
+#     driver: bridge
+
+# volumes:
+#   postgres_data:
+#     driver: local
+#   redis_data:
+#     driver: local

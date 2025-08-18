@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Health Check</title>
+  </head>
+  <body>
+    <h1>Frontend Healthy</h1>
+    <p>Timestamp: <span id="timestamp"></span></p>
+    <script>
+      document.getElementById('timestamp').textContent =
+        new Date().toISOString();
+    </script>
+  </body>
+</html>
