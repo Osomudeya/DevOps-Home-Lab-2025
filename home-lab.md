@@ -330,16 +330,45 @@ Your Docker Compose setup uses nginx on port 80. In Kubernetes, we need an Ingre
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
 
-# Install ingress controller (like your nginx service, but smarter)
+# Install ingress controller with correct configuration for k3d
 helm install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace ingress-nginx \
   --create-namespace \
-  --set controller.service.type=NodePort \
-  --set controller.hostNetwork=true \
-  --set controller.hostPort.enabled=true \
-  --set controller.hostPort.ports.http=80 \
-  --set controller.hostPort.ports.https=443
+  --set controller.service.type=LoadBalancer \
+  --set controller.service.ports.http=80 \
+  --set controller.service.ports.https=443 \
+  --wait
+
+  # Verify the installation
+echo "Waiting for ingress controller to be ready..."
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=90s
+
+# Check the service - should show EXTERNAL-IP as localhost
+kubectl get svc -n ingress-nginx
+
+# Test connectivity to the correct ports
+echo "Testing connectivity..."
+echo "HTTP (should connect): curl -I http://localhost:8080"
+curl -I http://localhost:8080 2>/dev/null && echo "✅ HTTP working" || echo "❌ HTTP not responding"
+
+echo "HTTPS (should connect): curl -Ik https://localhost:8443"  
+curl -Ik https://localhost:8443 2>/dev/null && echo "✅ HTTPS working" || echo "❌ HTTPS not responding"
 ```
+
+### **🚨 IMPORTANT: Why This Configuration Works**
+
+**The Problem with NodePort + hostNetwork:**
+- ❌ **NodePort with hostNetwork**: Creates port conflicts with k3d cluster ports
+- ❌ **Random high ports**: Results in inaccessible URLs like `:31822` and `:32204`
+- ❌ **Port binding conflicts**: Ingress tries to bind to ports 80/443 that conflict with k3d
+
+**The Solution - LoadBalancer Service Type:**
+- ✅ **LoadBalancer service**: Works seamlessly with k3d's port mapping
+- ✅ **Proper port mapping**: Traffic flows from 8080/8443 → 80/443 → nginx-ingress
+- ✅ **No port conflicts**: k3d handles the port forwarding automatically
 
 ### Generate TLS Certificates
 
@@ -367,12 +396,14 @@ Quick test to ensure everything works:
 kubectl run test-nginx --image=nginx --port=80
 kubectl expose pod test-nginx --port=80
 
-# Create test ingress
+# Create test ingress with correct configuration for k3d
 cat << EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: test-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   tls:
   - hosts:
@@ -391,11 +422,47 @@ spec:
               number: 80
 EOF
 
+# Wait for ingress to be ready
+sleep 10
+
 # Add to hosts file
 echo "127.0.0.1 humor-game.local.test" | sudo tee -a /etc/hosts
 ```
 
-**✅ Checkpoint**: Open `https://humor-game.local.test` - you should see nginx welcome page with a valid TLS certificate.
+**✅ Checkpoint**: Open `https://humor-game.local.test:8443` - you should see nginx welcome page with a valid TLS certificate.
+
+**🎯 Important**: Use port `:8443` because k3d maps cluster port 443 to your host port 8443.
+
+### **🚨 Common Mistakes to Avoid**
+
+**❌ Don't Use This Configuration (Will Cause Port Conflicts):**
+```bash
+# WRONG - This causes port conflicts with k3d
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --set controller.service.type=NodePort \
+  --set controller.hostNetwork=true \
+  --set controller.hostPort.enabled=true
+```
+
+**✅ Use This Configuration (Works with k3d):**
+```bash
+# CORRECT - This works seamlessly with k3d
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --set controller.service.type=LoadBalancer \
+  --set controller.service.ports.http=80 \
+  --set controller.service.ports.https=443
+```
+
+**🔍 How to Verify It's Working:**
+```bash
+# Check service configuration
+kubectl get svc -n ingress-nginx
+
+# Should show LoadBalancer with proper ports
+# Test connectivity
+curl -I http://localhost:8080    # Should return HTTP response
+curl -Ik https://localhost:8443  # Should return HTTPS response
+```
 
 Clean up the test:
 ```bash
@@ -978,13 +1045,21 @@ kubectl get nodes
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
+
+# Install with LoadBalancer service type (works with k3d)
 helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx --create-namespace \
-  --set controller.service.type=NodePort \
-  --set controller.hostNetwork=true \
-  --set controller.hostPort.enabled=true \
-  --set controller.hostPort.ports.http=80 \
-  --set controller.hostPort.ports.https=443
+  --namespace ingress-nginx \
+  --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --set controller.service.ports.http=80 \
+  --set controller.service.ports.https=443 \
+  --wait
+
+# Verify installation
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=90s
 ```
 
 #### **Step 4: Create TLS Certificates for Production Domain**
@@ -3045,6 +3120,26 @@ k3d cluster create --config k3d-config.yaml
 - **`home-lab.md`**: Full Kubernetes production setup (30+ minutes)
 
 **Choose your path based on your needs! 🚀**
+
+---
+
+## **🔑 KEY SUCCESS FACTORS FOR K3D + NGINX-INGRESS**
+
+### **✅ What Works:**
+- **Service Type**: `LoadBalancer` (not NodePort)
+- **Port Mapping**: Let k3d handle port forwarding (8080→80, 8443→443)
+- **Ingress Class**: Always specify `ingressClassName: nginx`
+- **TLS**: Use your production domain from the start
+
+### **❌ What Doesn't Work:**
+- **NodePort + hostNetwork**: Creates port conflicts
+- **Direct port binding**: Bypasses k3d's port mapping
+- **Missing ingressClassName**: Ingress won't be processed
+
+### **🎯 Final Working URLs:**
+- **HTTP**: `http://humor-game.local.test:8080`
+- **HTTPS**: `https://humor-game.local.test:8443`
+- **API**: `https://humor-game.local.test:8443/api/health`
 
 ---
 
