@@ -180,7 +180,7 @@ npm run dev
 cd frontend
 npm run dev
 
-# Frontend runs on http://localhost:8080
+# Frontend runs on http://localhost:3002
 # Auto-reloads on file changes in frontend/src/
 ```
 
@@ -197,7 +197,7 @@ npx jest tests/api.test.js
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **Frontend** | http://localhost:8080 | Game UI (dev server) |
+| **Frontend** | http://localhost:3002 | Game UI (dev server) |
 | **Backend API** | http://localhost:3001 | API endpoints |
 | **Full Stack** | http://localhost:3000 | Complete app (Docker) |
 | **Database** | localhost:5432 | PostgreSQL |

@@ -241,10 +241,10 @@ metadata:
 servers: 1
 agents: 2
 ports:
-  - port: 80:80
+  - port: 8080:80
     nodeFilters:
       - loadbalancer
-  - port: 443:443
+  - port: 8443:443
     nodeFilters:
       - loadbalancer
 registries:
@@ -264,6 +264,26 @@ k3d cluster create --config k3d-config.yaml
 # Switch to the new cluster
 kubectl config use-context k3d-humor-game-cluster
 ```
+
+### **🚨 IMPORTANT: Port Conflict Resolution**
+
+**If you get port conflicts with Docker Compose:**
+```bash
+# Clean approach - create cluster with different ports
+k3d cluster create humor-game-cluster \
+  --servers 1 \
+  --agents 2 \
+  --port 8080:80@loadbalancer \
+  --port 8443:443@loadbalancer \
+  --k3s-arg '--disable=traefik@server:*' \
+  --registry-use k3d-k3d-registry:5001
+```
+
+**Port Mapping:**
+- **HTTP**: `localhost:8080` → Cluster port 80
+- **HTTPS**: `localhost:8443` → Cluster port 443
+- **Docker Compose**: Keeps using ports 80 and 443
+- **No conflicts!** 🎯
 
 ### Verify Your Cluster
 
@@ -895,6 +915,25 @@ EOF
 ./deploy-k8s.sh
 ```
 
+### **Manual Cluster Setup (If Automated Fails)**
+```bash
+# Create registry
+k3d registry create k3d-registry --port 5001
+
+# Create cluster with registry connected
+k3d cluster create humor-game-cluster \
+  --servers 1 \
+  --agents 2 \
+  --port 8080:80@loadbalancer \
+  --port 8443:443@loadbalancer \
+  --k3s-arg '--disable=traefik@server:*' \
+  --registry-use k3d-k3d-registry:5001
+
+# Verify cluster
+kubectl get nodes
+kubectl config current-context
+```
+
 ### **🔧 DETAILED STEP-BY-STEP GUIDE**
 
 #### **Step 1: Start Local Container Registry**
@@ -904,7 +943,19 @@ docker run -d --restart=always -p 5001:5000 --name k3d-registry registry:2
 
 #### **Step 2: Create Your k3d Cluster**
 ```bash
-k3d cluster create --config k3d-config.yaml
+# Create registry first
+k3d registry create k3d-registry --port 5001
+
+# Then create cluster with registry connected (using different ports to avoid conflicts)
+k3d cluster create humor-game-cluster \
+  --servers 1 \
+  --agents 2 \
+  --port 8080:80@loadbalancer \
+  --port 8443:443@loadbalancer \
+  --k3s-arg '--disable=traefik@server:*' \
+  --registry-use k3d-k3d-registry:5001
+
+# Switch to the new cluster
 kubectl config use-context k3d-humor-game-cluster
 kubectl get nodes
 ```
@@ -2973,6 +3024,44 @@ k3d cluster create --config k3d-config.yaml
 
 ## 🚨 CRITICAL TROUBLESHOOTING
 
+### **Port Conflict Issue (FIXED)**
+**Problem**: Docker Compose using ports 80/443 conflicts with k3d cluster creation.
+
+**Solution**: Use different ports for k3d cluster:
+```bash
+# Use ports 8080 and 8443 to avoid conflicts
+k3d cluster create humor-game-cluster \
+  --servers 1 \
+  --agents 2 \
+  --port 8080:80@loadbalancer \
+  --port 8443:443@loadbalancer \
+  --k3s-arg '--disable=traefik@server:*' \
+  --registry-use k3d-k3d-registry:5001
+```
+
+**Port Mapping**:
+- **HTTP**: `localhost:8080` → Cluster port 80
+- **HTTPS**: `localhost:8443` → Cluster port 443
+- **Docker Compose**: Keeps using ports 80 and 443
+
+### **Registry Connection Issue (FIXED)**
+**Problem**: Registry not properly connected to cluster.
+
+**Solution**: Use `--registry-use` during cluster creation:
+```bash
+# Create registry first
+k3d registry create k3d-registry --port 5001
+
+# Then create cluster with registry connected
+k3d cluster create humor-game-cluster \
+  --servers 1 \
+  --agents 2 \
+  --port 8080:80@loadbalancer \
+  --port 8443:443@loadbalancer \
+  --k3s-arg '--disable=traefik@server:*' \
+  --registry-use k3d-k3d-registry:5001
+```
+
 ### **Redis Password Issue (FIXED)**
 The Redis deployment in this guide has a **critical issue**: `$(REDIS_PASSWORD)` variable substitution doesn't work in command arrays.
 
@@ -3021,3 +3110,27 @@ Original manifests had resource limits too high for laptop deployment.
 ---
 
 **All critical issues have been fixed in this updated guide! 🎯**
+
+### **✅ RECENT FIXES IMPLEMENTED:**
+
+1. **Port Conflict Resolution** ✅
+   - **Problem**: Docker Compose using ports 80/443 conflicts with k3d
+   - **Solution**: Use ports 8080/8443 for k3d cluster
+   - **Result**: Both Docker Compose and Kubernetes can run simultaneously
+
+2. **Registry Connection** ✅
+   - **Problem**: Registry not properly connected to cluster
+   - **Solution**: Use `--registry-use` during cluster creation
+   - **Result**: Cluster can pull images from local registry
+
+3. **Cluster Creation** ✅
+   - **Problem**: Complex k3d-config.yaml causing issues
+   - **Solution**: Use direct command-line approach
+   - **Result**: Reliable cluster creation every time
+
+### **🎯 CURRENT STATUS:**
+- ✅ **Docker Compose**: Working perfectly (ports 80/443)
+- ✅ **Kubernetes Cluster**: Created successfully (ports 8080/8443)
+- ✅ **Registry**: Connected and accessible
+- ✅ **Port Conflicts**: Resolved
+- 🚀 **Ready for next phase**: nginx-ingress installation

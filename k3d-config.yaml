@@ -14,6 +14,11 @@ ports:
 registries:
   use:
     - k3d-registry:5000
+  config: |
+    mirrors:
+      "localhost:5001":
+        endpoint:
+          - http://k3d-registry:5000
 options:
   k3s:
     extraArgs:
