@@ -216,6 +216,7 @@ docker info
 
 # If using Colima and Docker isn't running:
 colima start --runtime docker
+#if yes
 
 # If using Docker Desktop, start it from Applications
 ```
