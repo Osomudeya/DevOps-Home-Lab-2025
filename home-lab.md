@@ -35,6 +35,23 @@ You have a working Humor Memory Game running in Docker Compose. That's great for
 
 This lab transforms your existing `docker-compose.yml` setup into a production-grade Kubernetes deployment with GitOps, monitoring, and CI/CD - all running on your laptop.
 
+### **🐳 Before You Start: Docker Compose with Makefile**
+
+If you haven't set up Docker Compose yet, or want to test your application first, check out the **simpler approach** in [`local-test.md`](local-test.md):
+
+```bash
+# Quick Docker Compose setup with Makefile
+make setup          # Initial setup
+make dev            # Start development environment
+make health         # Check service health
+make logs           # View all logs
+
+# Or use the one-command setup
+make deploy-local   # Setup + build + start everything
+```
+
+This gives you a **working game** in 5 minutes before upgrading to Kubernetes! 🚀
+
 ### What You'll Build
 
 Starting with your current setup:
@@ -79,6 +96,25 @@ Every tool serves a specific purpose in your game's journey:
 ## 2. Prerequisites - Copy-Paste Installation
 
 Since you already have Docker working, we just need to add the Kubernetes tools.
+
+### **🎯 Prerequisites Check**
+
+**Required:**
+- ✅ **Docker** (Docker Desktop or Colima)
+- ✅ **Git** (for version control)
+
+**Optional but Recommended:**
+- 🐳 **Docker Compose experience** (if you want to test first)
+- 📚 **Basic container knowledge** (helpful but not required)
+
+### **🐳 Want to Test First?**
+
+If you're new to containers or want to verify your game works before Kubernetes, start with the **simpler Docker Compose approach**:
+
+```bash
+# Check out local-test.md for the easy way
+# This gives you a working game in 5 minutes!
+```
 
 ### macOS Installation
 
@@ -2894,6 +2930,44 @@ spec:
 - Practice disaster recovery scenarios
 
 **You're now ready to confidently discuss and implement DevOps practices in any professional environment! 🚀**
+
+---
+
+## **🔄 Complete Development Journey**
+
+### **Phase 1: Docker Compose (5 minutes)**
+```bash
+# Start here if you're new to containers
+# See local-test.md for the simple approach
+make setup
+make dev
+make health
+# Your game is now running locally! 🎮
+```
+
+### **Phase 2: Kubernetes (30 minutes)**
+```bash
+# Upgrade to production-grade orchestration
+# Follow this home-lab.md guide
+k3d cluster create --config k3d-config.yaml
+./deploy-k8s.sh
+# Your game is now Kubernetes-ready! 🚀
+```
+
+### **Phase 3: Production Features (1 hour)**
+```bash
+# Add monitoring, GitOps, and CI/CD
+# All covered in this guide
+# Your game is now enterprise-ready! 🏭
+```
+
+---
+
+**🎯 You now have both approaches documented:**
+- **`local-test.md`**: Quick Docker Compose setup (5 minutes)
+- **`home-lab.md`**: Full Kubernetes production setup (30+ minutes)
+
+**Choose your path based on your needs! 🚀**
 
 ---
 

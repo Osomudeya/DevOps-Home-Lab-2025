@@ -24,6 +24,29 @@ docker-compose up --build
 # - API: http://localhost:3001
 ```
 
+### Option 1.5: 🐳 Docker Setup with Makefile (Enhanced)
+```bash
+# Clone and setup
+git clone <your-repo>
+cd humor-memory-game
+cp .env.example .env
+
+# Use Makefile for enhanced Docker management
+make setup          # Initial setup and environment check
+make build          # Build all Docker images
+make dev            # Start development environment
+make health         # Check service health
+make logs           # View all service logs
+
+# Or use the quick command
+make deploy-local   # Setup + build + start everything
+
+# Access:
+# - Game: http://localhost:3000
+# - API: http://localhost:3001
+# - Nginx: http://localhost:80
+```
+
 ### Option 2: 🔧 Automated Dev Setup
 ```bash
 # Use the automated setup script
@@ -315,6 +338,24 @@ chmod +x scripts/*.sh
 sudo chown -R $(whoami) ~/.npm
 ```
 
+### Makefile errors
+```bash
+# Check if Makefile exists
+ls -la Makefile
+
+# Check Makefile syntax
+make help
+
+# Common Makefile issues:
+# - "No rule to make target": Check target name spelling
+# - "Permission denied": Run chmod +x deploy-k8s.sh
+# - "Command not found": Ensure make is installed (brew install make)
+
+# Reset Makefile state
+make clean
+make setup
+```
+
 ## 🎮 Ready to Code!
 
 Your development environment is now ready:
@@ -323,5 +364,136 @@ Your development environment is now ready:
 2. **Frontend** serves from `frontend/src/`
 3. **Database** persists data between restarts
 4. **Tests** ensure everything works correctly
+
+---
+
+## 🛠️ **MAKEFILE COMMANDS REFERENCE**
+
+### **🚀 Quick Commands**
+```bash
+make help              # Show all available commands
+make setup             # Initial project setup
+make dev               # Start development environment
+make prod              # Start production environment
+make deploy-local      # Setup + build + start everything
+```
+
+### **🏗️ Build Commands**
+```bash
+make build             # Build all Docker images
+make build-backend     # Build only backend image
+make build-frontend    # Build only frontend image
+make clean             # Clean up containers, volumes, and images
+```
+
+### **📊 Management Commands**
+```bash
+make start             # Start all services
+make stop              # Stop all services
+make restart           # Restart all services
+make status            # Show service status
+make health            # Check service health
+make logs              # View all service logs
+make logs-backend      # View backend logs only
+make logs-frontend     # View frontend logs only
+make logs-db           # View database logs only
+```
+
+### **🔧 Development Commands**
+```bash
+make shell-backend     # Access backend container shell
+make shell-db          # Access database shell
+make backup            # Create database backup
+make restore           # Restore database from backup
+make update            # Update and restart services
+```
+
+### **🧪 Testing Commands**
+```bash
+make test              # Run all tests
+make test-api          # Test API endpoints
+make lint              # Lint code
+make format            # Format code
+```
+
+### **📁 Makefile Structure**
+```bash
+# Key targets in your Makefile:
+setup:                 # Initial project setup
+dev:                   # Development environment
+prod:                  # Production environment
+build:                 # Build Docker images
+deploy-local:          # Local deployment
+health:                # Health checks
+logs:                  # Log viewing
+clean:                 # Cleanup
+```
+
+### **🎯 Makefile Workflow Examples**
+
+#### **Complete Development Setup**
+```bash
+# 1. Initial setup
+make setup
+
+# 2. Build and start
+make dev
+
+# 3. Check health
+make health
+
+# 4. View logs
+make logs
+```
+
+#### **Production Testing**
+```bash
+# 1. Start production environment
+make prod
+
+# 2. Verify production setup
+make health
+
+# 3. Check production logs
+make logs
+```
+
+#### **Quick Reset**
+```bash
+# 1. Stop everything
+make stop
+
+# 2. Clean up
+make clean
+
+# 3. Start fresh
+make dev
+```
+
+#### **Backend Development**
+```bash
+# 1. Start services
+make dev
+
+# 2. Access backend shell
+make shell-backend
+
+# 3. View backend logs
+make logs-backend
+
+# 4. Restart backend only
+make restart
+```
+
+### **🔍 Makefile Features**
+
+- **🔄 Auto-rebuild**: Images rebuild automatically when needed
+- **📊 Health monitoring**: Built-in health checks for all services
+- **📝 Log aggregation**: Easy access to all service logs
+- **🐚 Shell access**: Quick access to container shells
+- **💾 Backup/restore**: Database backup and restore commands
+- **🧹 Cleanup**: Complete cleanup and reset functionality
+
+---
 
 Happy coding! 🚀✨
