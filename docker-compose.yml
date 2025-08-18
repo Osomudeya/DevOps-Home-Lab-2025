@@ -14,8 +14,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/combined-init.sql:/docker-entrypoint-initdb.d/01-combined-init.sql
-    ports:
-      - "5432:5432"
+    # SECURITY: Database port not exposed in production
+    # ports:
+    #   - "5432:5432"
     networks:
       - backend-network
     healthcheck:
@@ -33,8 +34,9 @@ services:
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-gamepass123}
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    # SECURITY: Redis port not exposed in production
+    # ports:
+    #   - "6379:6379"
     networks:
       - backend-network
     healthcheck:
@@ -66,8 +68,9 @@ services:
       API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
-    ports:
-      - "${API_PORT:-3001}:${API_PORT:-3001}"
+    # SECURITY: Backend port not exposed in production
+    # ports:
+    #   - "${API_PORT:-3001}:${API_PORT:-3001}"
     networks:
       - backend-network
       - frontend-network

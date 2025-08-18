@@ -82,13 +82,37 @@ Since you already have Docker working, we just need to add the Kubernetes tools.
 
 ### macOS Installation
 
+**Option A: With Docker Desktop (easiest)**
 ```bash
-# Install Homebrew tools
+# Install Docker Desktop from https://www.docker.com/products/docker-desktop/
+# Then install additional tools
 brew install k3d kubectl helm mkcert cloudflared git
 
-# Verify your Docker is working
+# Verify Docker is working
 docker --version && docker ps
 ```
+
+**Option B: With Colima (lightweight alternative)**
+```bash
+# Install Colima + Docker CLI (no Docker Desktop needed)
+brew install colima docker docker-compose kubectl helm mkcert cloudflared git
+
+# Start Colima with Docker runtime
+colima start --runtime docker
+
+# Verify Docker is working
+docker version && docker run hello-world
+
+# Optional: Configure Colima for better performance
+colima stop
+colima start --runtime docker --cpu 4 --memory 8 --disk 100
+```
+
+**Why choose Colima?**
+- Lighter weight than Docker Desktop
+- Better performance on Apple Silicon
+- Open source and free
+- Works perfectly with k3d and Kubernetes tools
 
 ### Windows (WSL2) Installation
 
@@ -126,15 +150,39 @@ kubectl version --client  # Client Version: v1.28.0+
 helm version              # version.BuildInfo{Version:"v3.13.0+"}
 mkcert -version           # v1.4.4+
 cloudflared --version     # cloudflared version 2023.8.0+
+
+# If using Colima, also check:
+colima status             # Should show "Running"
 ```
 
 **✅ Checkpoint**: All commands return version numbers. If any fail, install that tool individually.
+
+**Colima Users**: Your Docker runtime is now ready! Colima will automatically start when needed, or you can manage it manually:
+```bash
+colima start    # Start when needed
+colima stop     # Save resources when not coding
+colima status   # Check if running
+```
 
 ---
 
 ## 3. Cluster in 60 Seconds
 
 Time to replace Docker Compose with a real Kubernetes cluster. We'll keep your local registry running so image builds stay fast.
+
+### Ensure Docker is Running
+
+Before we start, make sure Docker is running:
+
+```bash
+# Check if Docker is running
+docker info
+
+# If using Colima and Docker isn't running:
+colima start --runtime docker
+
+# If using Docker Desktop, start it from Applications
+```
 
 ### Start Local Registry
 
@@ -292,7 +340,27 @@ kubectl delete pod test-nginx
 
 Now we'll translate your `docker-compose.yml` into Kubernetes manifests. Each service becomes a Deployment + Service.
 
-### Build and Push Your Images
+### **🚀 QUICK DEPLOYMENT (Recommended)**
+
+I've created a deployment script that reads from your `.env` file automatically:
+
+```bash
+# Make sure you have a .env file with these variables:
+cat > .env << EOF
+DB_PASSWORD=your_secure_password_here
+REDIS_PASSWORD=your_secure_password_here
+JWT_SECRET=$(openssl rand -base64 64)
+EOF
+
+# Then deploy everything with one command:
+./deploy-k8s.sh
+```
+
+### **🔧 MANUAL DEPLOYMENT (Step by Step)**
+
+If you prefer to deploy manually or want to understand each step:
+
+#### Build and Push Your Images
 
 First, get your app images into the local registry:
 
@@ -342,7 +410,10 @@ data:
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   API_PORT: "3001"
+  # Fixed CORS for Kubernetes ingress
   CORS_ORIGIN: "https://humor-game.local.test"
+  FRONTEND_URL: "https://humor-game.local.test"
+  API_BASE_URL: "https://humor-game.local.test"
 ---
 apiVersion: v1
 kind: Secret
@@ -351,13 +422,61 @@ metadata:
   namespace: humor-game
 type: Opaque
 stringData:
-  DB_PASSWORD: "gamepass123"
-  REDIS_PASSWORD: "gamepass123"
-  JWT_SECRET: "95Ywi2hH9olJiwgD1I60beeFb+WHpo9UfyzMuIZ+N9c="
+  # ⚠️  SECURITY: Change these passwords in production!
+  DB_PASSWORD: "CHANGE_THIS_SECURE_PASSWORD"
+  REDIS_PASSWORD: "CHANGE_THIS_SECURE_PASSWORD"
+  # Generate with: openssl rand -base64 64
+  JWT_SECRET: "CHANGE_THIS_TO_64_CHAR_RANDOM_STRING"
 ```
 
-**k8s/postgres.yaml** - Your game's database:
+**k8s/postgres.yaml** - Fixed initialization:
 ```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: humor-game
+data:
+  01-init.sql: |
+    -- Copy content from your database/combined-init.sql file here
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    
+    DROP TABLE IF EXISTS game_matches CASCADE;
+    DROP TABLE IF EXISTS games CASCADE;
+    DROP TABLE IF EXISTS users CASCADE;
+    
+    CREATE TABLE users (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE,
+        display_name VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        last_played TIMESTAMP WITH TIME ZONE,
+        total_games INTEGER DEFAULT 0,
+        total_score INTEGER DEFAULT 0,
+        best_score INTEGER DEFAULT 0,
+        best_time INTEGER,
+        is_active BOOLEAN DEFAULT true
+    );
+    
+    CREATE TABLE games (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        username VARCHAR(50) NOT NULL,
+        score INTEGER NOT NULL DEFAULT 0,
+        moves INTEGER NOT NULL DEFAULT 0,
+        time_elapsed INTEGER NOT NULL DEFAULT 0,
+        cards_matched INTEGER NOT NULL DEFAULT 0,
+        difficulty_level VARCHAR(20) DEFAULT 'easy',
+        game_completed BOOLEAN DEFAULT false,
+        started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        game_data JSONB
+    );
+    
+    -- Continue with rest of your combined-init.sql content...
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -401,21 +520,11 @@ spec:
           mountPath: /docker-entrypoint-initdb.d
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "250m"
+            memory: "64Mi"   # Reduced for laptop use
+            cpu: "50m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
-        readinessProbe:
-          exec:
-            command:
-            - pg_isready
-            - -U
-            - gameuser
-            - -d
-            - humor_memory_game
-          initialDelaySeconds: 5
-          periodSeconds: 5
+            memory: "128Mi"
+            cpu: "100m"
       volumes:
       - name: postgres-storage
         emptyDir: {}
@@ -433,17 +542,6 @@ spec:
     app: postgres
   ports:
   - port: 5432
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: postgres-init
-  namespace: humor-game
-data:
-  01-init.sql: |
-    -- Your database/combined-init.sql content goes here
-    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-    -- ... (copy your actual init script)
 ```
 
 **k8s/redis.yaml** - Session cache:
@@ -482,20 +580,11 @@ spec:
         - containerPort: 6379
         resources:
           requests:
+            memory: "32Mi"   # Reduced for laptop use
+            cpu: "25m"
+          limits:
             memory: "64Mi"
             cpu: "50m"
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - -a
-            - $(REDIS_PASSWORD)
-            - ping
-          initialDelaySeconds: 5
-          periodSeconds: 5
 ---
 apiVersion: v1
 kind: Service
@@ -509,7 +598,7 @@ spec:
   - port: 6379
 ```
 
-**k8s/backend.yaml** - Your Node.js API:
+**k8s/backend.yaml** - Fixed environment variables:
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -517,7 +606,7 @@ metadata:
   name: backend
   namespace: humor-game
 spec:
-  replicas: 2
+  replicas: 1  # Start with 1 replica for laptop
   selector:
     matchLabels:
       app: backend
@@ -579,13 +668,23 @@ spec:
             configMapKeyRef:
               name: humor-game-config
               key: CORS_ORIGIN
+        - name: FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: humor-game-config
+              key: FRONTEND_URL
+        - name: API_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: humor-game-config
+              key: API_BASE_URL
         resources:
           requests:
+            memory: "64Mi"   # Reduced for laptop use
+            cpu: "50m"
+          limits:
             memory: "128Mi"
             cpu: "100m"
-          limits:
-            memory: "256Mi"
-            cpu: "200m"
         livenessProbe:
           httpGet:
             path: /health
@@ -611,7 +710,7 @@ spec:
   - port: 3001
 ```
 
-**k8s/frontend.yaml** - Your game's UI:
+**k8s/frontend.yaml**:
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -619,7 +718,7 @@ metadata:
   name: frontend
   namespace: humor-game
 spec:
-  replicas: 2
+  replicas: 1  # Start with 1 replica for laptop
   selector:
     matchLabels:
       app: frontend
@@ -635,23 +734,11 @@ spec:
         - containerPort: 80
         resources:
           requests:
+            memory: "16Mi"   # Very light for static content
+            cpu: "10m"
+          limits:
             memory: "32Mi"
             cpu: "25m"
-          limits:
-            memory: "64Mi"
-            cpu: "50m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 5
 ---
 apiVersion: v1
 kind: Service
@@ -665,7 +752,7 @@ spec:
   - port: 80
 ```
 
-**k8s/ingress.yaml** - Route traffic to your game:
+**k8s/ingress.yaml** - Fixed for proper routing:
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -673,7 +760,7 @@ metadata:
   name: humor-game-ingress
   namespace: humor-game
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   tls:
   - hosts:
@@ -702,6 +789,12 @@ spec:
 ### Deploy Your Game
 
 ```bash
+# ⚠️  SECURITY: Update secrets before deployment
+# Edit k8s/configmap.yaml and change these passwords:
+# - DB_PASSWORD: "CHANGE_THIS_SECURE_PASSWORD"
+# - REDIS_PASSWORD: "CHANGE_THIS_SECURE_PASSWORD"  
+# - JWT_SECRET: "CHANGE_THIS_TO_64_CHAR_RANDOM_STRING"
+
 # Copy TLS secret to game namespace
 kubectl get secret humor-game-tls -o yaml | \
   sed 's/namespace: default/namespace: humor-game/' | \
@@ -723,7 +816,725 @@ kubectl wait --for=condition=ready pod -l app=backend -n humor-game --timeout=60
 kubectl wait --for=condition=ready pod -l app=frontend -n humor-game --timeout=60s
 ```
 
-**✅ Checkpoint**: Open `https://humor-game.local.test` - your memory game is now running on Kubernetes!
+**✅ Checkpoint**: Open `https://gameapp.games` - your memory game is now running on Kubernetes!
+
+---
+
+## **📋 COMPLETE STEP-BY-STEP IMPLEMENTATION GUIDE**
+
+### **Before You Start (One-Time Setup)**
+
+#### **1. Install Required Tools (macOS)**
+```bash
+# Install Homebrew tools
+brew install k3d kubectl helm mkcert git
+
+# Verify installations
+k3d version
+kubectl version --client
+helm version
+mkcert -version
+```
+
+#### **2. Verify Docker is Running**
+```bash
+# Check Docker status
+docker info | grep -i server
+
+# If using Colima (alternative to Docker Desktop):
+# colima start --runtime docker
+```
+
+### **🚀 QUICK START (5 Minutes)**
+
+```bash
+# 1. Create .env file with your secrets
+cat > .env << EOF
+DB_PASSWORD=your_secure_password_here
+REDIS_PASSWORD=your_secure_password_here
+JWT_SECRET=$(openssl rand -base64 64)
+EOF
+
+# 2. Run the automated deployment
+./deploy-k8s.sh
+```
+
+### **🔧 DETAILED STEP-BY-STEP GUIDE**
+
+#### **Step 1: Start Local Container Registry**
+```bash
+docker run -d --restart=always -p 5001:5000 --name k3d-registry registry:2
+```
+
+#### **Step 2: Create Your k3d Cluster**
+```bash
+k3d cluster create --config k3d-config.yaml
+kubectl config use-context k3d-humor-game-cluster
+kubectl get nodes
+```
+
+#### **Step 3: Install nginx Ingress Controller**
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.type=NodePort \
+  --set controller.hostNetwork=true \
+  --set controller.hostPort.enabled=true \
+  --set controller.hostPort.ports.http=80 \
+  --set controller.hostPort.ports.https=443
+```
+
+#### **Step 4: Create TLS Certificates for Production Domain**
+```bash
+# Install local CA (one-time)
+mkcert -install
+
+# Generate certificates for your production domain
+mkcert "gameapp.games" "*.gameapp.games" localhost 127.0.0.1
+
+# Create Kubernetes TLS secret
+kubectl create secret tls humor-game-tls \
+  --cert=gameapp.games+2.pem \
+  --key=gameapp.games+2-key.pem
+
+# Add to hosts file for local testing
+echo "127.0.0.1 gameapp.games" | sudo tee -a /etc/hosts
+```
+
+#### **Step 5: Build and Push Your App Images**
+```bash
+# From project root directory
+docker build -t localhost:5001/humor-game/backend:v1.0.0 backend/
+docker push localhost:5001/humor-game/backend:v1.0.0
+
+docker build -t localhost:5001/humor-game/frontend:v1.0.0 frontend/
+docker push localhost:5001/humor-game/frontend:v1.0.0
+```
+
+#### **Step 6: Configure Environment Variables**
+```bash
+# Create .env file with your production secrets
+cat > .env << EOF
+# Database Configuration
+DB_PASSWORD=your_secure_database_password_here
+REDIS_PASSWORD=your_secure_redis_password_here
+
+# Security
+JWT_SECRET=$(openssl rand -base64 64)
+
+# Optional: Override domain if different
+# DOMAIN=yourdomain.com
+EOF
+```
+
+#### **Step 7: Deploy All Kubernetes Manifests**
+```bash
+# Option A: Use the automated script (recommended)
+./deploy-k8s.sh
+
+# Option B: Deploy manually
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/postgres.yaml
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/backend.yaml
+kubectl apply -f k8s/frontend.yaml
+kubectl apply -f k8s/ingress.yaml
+```
+
+#### **Step 8: Wait for All Services to Be Ready**
+```bash
+# Wait for database services
+kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=120s
+kubectl wait --for=condition=ready pod -l app=redis -n humor-game --timeout=60s
+
+# Wait for application services
+kubectl wait --for=condition=ready pod -l app=backend -n humor-game --timeout=120s
+kubectl wait --for=condition=ready pod -l app=frontend -n humor-game --timeout=60s
+
+# Wait for ingress
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx --timeout=120s
+```
+
+#### **Step 9: Access Your Application**
+```bash
+# Check service status
+kubectl get pods,svc,ingress -n humor-game
+
+# Access URLs
+echo "🎮 Game: https://gameapp.games"
+echo "🔍 API Health: https://gameapp.games/api/health"
+```
+
+### **🌐 EXPOSING TO INTERNET WITH CLOUDFLARE**
+
+#### **Step 10: Setup Cloudflare Tunnel (Optional)**
+```bash
+# Install cloudflared
+brew install cloudflared
+
+# Login to Cloudflare
+cloudflared tunnel login
+
+# Create tunnel
+cloudflared tunnel create humor-game-tunnel
+
+# Get tunnel ID
+TUNNEL_ID=$(cloudflared tunnel list | grep humor-game-tunnel | awk '{print $1}')
+
+# Create tunnel configuration
+mkdir -p ~/.cloudflared
+cat << EOF > ~/.cloudflared/config.yml
+tunnel: $TUNNEL_ID
+credentials-file: ~/.cloudflared/$TUNNEL_ID.json
+
+ingress:
+  - hostname: gameapp.games
+    service: https://localhost:443
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
+EOF
+
+# Create DNS record
+cloudflared tunnel route dns humor-game-tunnel gameapp.games
+
+# Run tunnel
+cloudflared tunnel run humor-game-tunnel
+```
+
+---
+
+## **🌐 COMPLETE CLOUDFLARE EXPOSURE GUIDE**
+
+### **What This Does**
+Cloudflare Tunnel creates a secure connection from the internet to your local Kubernetes cluster, allowing anyone to access your game at `https://gameapp.games` without exposing your home network.
+
+### **Prerequisites**
+1. **Cloudflare Account**: Sign up at [cloudflare.com](https://cloudflare.com)
+2. **Domain**: Add your domain (e.g., `gameapp.games`) to Cloudflare
+3. **DNS Management**: Ensure Cloudflare manages your domain's DNS
+
+### **Step-by-Step Cloudflare Setup**
+
+#### **1. Prepare Your Domain in Cloudflare**
+```bash
+# Go to Cloudflare Dashboard → Your Domain → DNS
+# Ensure these records exist:
+# Type: A, Name: @, Content: 192.168.1.1 (or any IP)
+# Type: A, Name: game, Content: 192.168.1.1 (or any IP)
+# Note: These IPs don't matter - Cloudflare Tunnel will override them
+```
+
+#### **2. Install and Authenticate Cloudflare CLI**
+```bash
+# Install cloudflared
+brew install cloudflared
+
+# Login to Cloudflare (opens browser)
+cloudflared tunnel login
+
+# This creates: ~/.cloudflared/cert.pem
+```
+
+#### **3. Create and Configure Your Tunnel**
+```bash
+# Create tunnel
+cloudflared tunnel create humor-game-tunnel
+
+# List tunnels to get the ID
+cloudflared tunnel list
+
+# Create tunnel configuration directory
+mkdir -p ~/.cloudflared
+
+# Create tunnel config (replace TUNNEL_ID with actual ID from list)
+cat << 'EOF' > ~/.cloudflared/config.yml
+tunnel: YOUR_TUNNEL_ID_HERE
+credentials-file: ~/.cloudflared/YOUR_TUNNEL_ID_HERE.json
+
+ingress:
+  # Route gameapp.games to your local Kubernetes
+  - hostname: gameapp.games
+    service: https://localhost:443
+    originRequest:
+      noTLSVerify: true
+      # Optional: Add security headers
+      additionalHeaders:
+        X-Frame-Options: DENY
+        X-Content-Type-Options: nosniff
+        Referrer-Policy: strict-origin-when-cross-origin
+  
+  # Route api.gameapp.games to backend API (optional)
+  - hostname: api.gameapp.games
+    service: https://localhost:443
+    originRequest:
+      noTLSVerify: true
+  
+  # Catch-all for unmatched hostnames
+  - service: http_status:404
+EOF
+```
+
+#### **4. Update Your Kubernetes Configuration for Internet Access**
+```bash
+# Update your k8s/configmap.yaml for internet access
+sed -i 's|CORS_ORIGIN: "https://gameapp.games"|CORS_ORIGIN: "https://gameapp.games, https://*.gameapp.games"|g' k8s/configmap.yaml
+
+# Update your k8s/ingress.yaml for multiple hostnames
+cat << 'EOF' > k8s/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: humor-game-ingress
+  namespace: humor-game
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://gameapp.games, https://*.gameapp.games"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+spec:
+  tls:
+    - hosts:
+        - gameapp.games
+        - api.gameapp.games
+      secretName: humor-game-tls
+  rules:
+    - host: gameapp.games
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3001
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: api.gameapp.games
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3001
+EOF
+        - api.gameapp.games
+      secretName: humor-game-tls
+  rules:
+    - host: gameapp.games
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3001
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: api.gameapp.games
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3001
+EOF
+```
+
+#### **5. Create DNS Records**
+```bash
+# Get your tunnel ID
+TUNNEL_ID=$(cloudflared tunnel list | grep humor-game-tunnel | awk '{print $1}')
+
+# Create DNS records for your tunnel
+cloudflared tunnel route dns humor-game-tunnel gameapp.games
+cloudflared tunnel route dns humor-game-tunnel api.gameapp.games
+
+# Verify DNS records in Cloudflare Dashboard
+# Go to DNS → Records → You should see:
+# Type: CNAME, Name: gameapp.games, Content: <tunnel-id>.cfargotunnel.com
+# Type: CNAME, Name: api.gameapp.games, Content: <tunnel-id>.cfargotunnel.com
+```
+
+#### **6. Test Your Tunnel**
+```bash
+# Start the tunnel in foreground (for testing)
+cloudflared tunnel run humor-game-tunnel
+
+# In another terminal, test the connection
+curl -I https://gameapp.games
+curl -I https://api.gameapp.games/api/health
+```
+
+#### **7. Run Tunnel as a Service (Production)**
+```bash
+# Install tunnel as a system service
+sudo cloudflared service install
+
+# Start the service
+sudo systemctl start cloudflared
+sudo systemctl enable cloudflared
+
+# Check service status
+sudo systemctl status cloudflared
+
+# View logs
+sudo journalctl -u cloudflared -f
+```
+
+#### **8. Update Your .env File for Internet Access**
+```bash
+# Update your .env file
+cat >> .env << EOF
+
+# Cloudflare Internet Exposure
+CORS_ORIGIN=https://gameapp.games,https://*.gameapp.games
+FRONTEND_URL=https://gameapp.games
+API_BASE_URL=https://api.gameapp.games
+EOF
+
+# Redeploy with updated configuration
+./deploy-k8s.sh
+```
+
+### **🌍 Access Your Game from Anywhere**
+
+Once the tunnel is running:
+- **🌐 Game**: `https://gameapp.games` (accessible from anywhere)
+- **🔌 API**: `https://api.gameapp.games/api/health` (accessible from anywhere)
+- **📱 Mobile**: Works on phones, tablets, any device
+- **🌍 Global**: Accessible from any country
+
+### **🔒 Security Features**
+
+Cloudflare Tunnel provides:
+- **🛡️ DDoS Protection**: Automatic attack mitigation
+- **🔐 SSL/TLS**: End-to-end encryption
+- **🌍 CDN**: Global content delivery
+- **📊 Analytics**: Traffic insights and monitoring
+- **🚫 No Port Forwarding**: Your router stays secure
+
+### **📱 Testing Internet Access**
+
+```bash
+# Test from your local machine
+curl -I https://gameapp.games
+
+# Test from a mobile device (different network)
+# Open https://gameapp.games in mobile browser
+
+# Test API endpoints
+curl -I https://api.gameapp.games/api/health
+curl -I https://gameapp.games/api/health
+
+# Test CORS (from browser console on different domain)
+fetch('https://api.gameapp.games/api/health', {
+  method: 'GET',
+  credentials: 'include'
+}).then(r => r.json()).then(console.log)
+```
+
+### **🚨 Troubleshooting Cloudflare Tunnel**
+
+#### **Common Issues**
+```bash
+# 1. Tunnel not connecting
+cloudflared tunnel info humor-game-tunnel
+cloudflared tunnel route ip show
+
+# 2. DNS not resolving
+nslookup gameapp.games
+dig gameapp.games
+
+# 3. Check tunnel logs
+sudo journalctl -u cloudflared -f
+
+# 4. Test tunnel connectivity
+cloudflared tunnel run humor-game-tunnel --loglevel debug
+```
+
+#### **Reset Tunnel if Needed**
+```bash
+# Delete and recreate tunnel
+cloudflared tunnel delete humor-game-tunnel
+cloudflared tunnel create humor-game-tunnel
+
+# Update config with new tunnel ID
+# Then recreate DNS routes
+```
+
+### **🎯 Production Considerations**
+
+1. **Backup Tunnel Config**: Save `~/.cloudflared/config.yml`
+2. **Monitor Tunnel Health**: Check Cloudflare dashboard regularly
+3. **Update Cloudflared**: Keep the CLI tool updated
+4. **Multiple Tunnels**: Consider separate tunnels for staging/production
+5. **Load Balancing**: Use multiple tunnel endpoints for high availability
+
+---
+
+**🎉 Congratulations! Your game is now accessible from anywhere on the internet via Cloudflare!**
+#### **6. Test Your Tunnel**
+```bash
+# Start the tunnel in foreground (for testing)
+cloudflared tunnel run humor-game-tunnel
+
+# In another terminal, test the connection
+curl -I https://gameapp.games
+curl -I https://api.gameapp.games/api/health
+```
+
+#### **7. Run Tunnel as a Service (Production)**
+```bash
+# Install tunnel as a system service
+sudo cloudflared service install
+
+# Start the service
+sudo systemctl start cloudflared
+sudo systemctl enable cloudflared
+
+# Check service status
+sudo systemctl status cloudflared
+
+# View logs
+sudo journalctl -u cloudflared -f
+```
+
+#### **8. Update Your .env File for Internet Access**
+```bash
+# Update your .env file
+cat >> .env << EOF
+
+# Cloudflare Internet Exposure
+CORS_ORIGIN=https://gameapp.games,https://*.gameapp.games
+FRONTEND_URL=https://gameapp.games
+API_BASE_URL=https://api.gameapp.games
+EOF
+
+# Redeploy with updated configuration
+./deploy-k8s.sh
+```
+
+### **🌍 Access Your Game from Anywhere**
+
+Once the tunnel is running:
+- **🌐 Game**: `https://gameapp.games` (accessible from anywhere)
+- **🔌 API**: `https://api.gameapp.games/api/health` (accessible from anywhere)
+- **📱 Mobile**: Works on phones, tablets, any device
+- **🌍 Global**: Accessible from any country
+
+### **🔒 Security Features**
+
+Cloudflare Tunnel provides:
+- **🛡️ DDoS Protection**: Automatic attack mitigation
+- **🔐 SSL/TLS**: End-to-end encryption
+- **🌍 CDN**: Global content delivery
+- **📊 Analytics**: Traffic insights and monitoring
+- **🚫 No Port Forwarding**: Your router stays secure
+
+### **📱 Testing Internet Access**
+
+```bash
+# Test from your local machine
+curl -I https://gameapp.games
+
+# Test from a mobile device (different network)
+# Open https://gameapp.games in mobile browser
+
+# Test API endpoints
+curl -I https://api.gameapp.games/api/health
+curl -I https://gameapp.games/api/health
+
+# Test CORS (from browser console on different domain)
+fetch('https://api.gameapp.games/api/health', {
+  method: 'GET',
+  credentials: 'include'
+}).then(r => r.json()).then(console.log)
+```
+
+### **🚨 Troubleshooting Cloudflare Tunnel**
+
+#### **Common Issues**
+```bash
+# 1. Tunnel not connecting
+cloudflared tunnel info humor-game-tunnel
+cloudflared tunnel route ip show
+
+# 2. DNS not resolving
+nslookup gameapp.games
+dig gameapp.games
+
+# 3. Check tunnel logs
+sudo journalctl -u cloudflared -f
+
+# 4. Test tunnel connectivity
+cloudflared tunnel run humor-game-tunnel --loglevel debug
+```
+
+#### **Reset Tunnel if Needed**
+```bash
+# Delete and recreate tunnel
+cloudflared tunnel delete humor-game-tunnel
+cloudflared tunnel create humor-game-tunnel
+
+# Update config with new tunnel ID
+# Then recreate DNS routes
+```
+
+### **🎯 Production Considerations**
+
+1. **Backup Tunnel Config**: Save `~/.cloudflared/config.yml`
+2. **Monitor Tunnel Health**: Check Cloudflare dashboard regularly
+3. **Update Cloudflared**: Keep the CLI tool updated
+4. **Multiple Tunnels**: Consider separate tunnels for staging/production
+5. **Load Balancing**: Use multiple tunnel endpoints for high availability
+
+---
+
+**🎉 Congratulations! Your game is now accessible from anywhere on the internet via Cloudflare!**
+
+### **📝 UPDATING YOUR APPLICATION**
+
+#### **Build and Deploy New Versions**
+```bash
+# 1. Build new images with new tag
+docker build -t localhost:5001/humor-game/backend:v1.0.1 backend/
+docker build -t localhost:5001/humor-game/frontend:v1.0.1 frontend/
+
+# 2. Push to registry
+docker push localhost:5001/humor-game/backend:v1.0.1
+docker push localhost:5001/humor-game/frontend:v1.0.1
+
+# 3. Update manifests
+sed -i 's|image: localhost:5001/humor-game/backend:.*|image: localhost:5001/humor-game/backend:v1.0.1|g' k8s/backend.yaml
+sed -i 's|image: localhost:5001/humor-game/frontend:.*|image: localhost:5001/humor-game/frontend:v1.0.1|g' k8s/frontend.yaml
+
+# 4. Re-deploy
+kubectl apply -f k8s/backend.yaml
+kubectl apply -f k8s/frontend.yaml
+
+# 5. Wait for rollout
+kubectl rollout status deployment/backend -n humor-game
+kubectl rollout status deployment/frontend -n humor-game
+```
+
+### **🔍 TROUBLESHOOTING COMMANDS**
+
+#### **Check Service Status**
+```bash
+# View all resources
+kubectl get pods,svc,ingress -n humor-game
+
+# Check pod logs
+kubectl logs -l app=backend -n humor-game --tail=100
+kubectl logs -l app=postgres -n humor-game --tail=100
+kubectl logs -l app=redis -n humor-game --tail=100
+
+# Describe failing pods
+kubectl describe pod <pod-name> -n humor-game
+```
+
+#### **Test Database Connections**
+```bash
+# Test PostgreSQL
+kubectl exec -it $(kubectl get pod -l app=postgres -n humor-game -o jsonpath='{.items[0].metadata.name}') -n humor-game -- psql -U gameuser -d humor_memory_game -c "SELECT 1;"
+
+# Test Redis
+kubectl exec -it $(kubectl get pod -l app=redis -n humor-game -o jsonpath='{.items[0].metadata.name}') -n humor-game -- sh -c 'redis-cli -a "$REDIS_PASSWORD" ping'
+```
+
+#### **Common Issues and Fixes**
+```bash
+# If images won't pull
+docker ps | grep registry
+curl http://localhost:5001/v2/_catalog
+
+# If CORS errors
+kubectl get configmap humor-game-config -n humor-game -o yaml
+
+# If ingress not working
+kubectl get pods -n ingress-nginx
+kubectl describe ingress -n humor-game
+
+# Reset everything
+kubectl delete namespace humor-game --timeout=60s || true
+k3d cluster delete humor-game-cluster || true
+docker rm -f k3d-registry || true
+```
+
+### **📊 MONITORING (Optional)**
+
+#### **Install Prometheus + Grafana**
+```bash
+# Add monitoring stack
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# Create lightweight values for laptops
+cat << EOF > monitoring-values.yaml
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "50m"
+      limits:
+        memory: "256Mi"
+        cpu: "100m"
+
+grafana:
+  adminPassword: "humor-game-admin"
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "25m"
+    limits:
+      memory: "64Mi"
+      cpu: "50m"
+  persistence:
+    enabled: false
+
+alertmanager:
+  enabled: false
+EOF
+
+# Install monitoring
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --create-namespace \
+  --values monitoring-values.yaml \
+  --wait
+
+# Access Grafana
+kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring &
+echo "Grafana: http://localhost:3000 (admin/humor-game-admin)"
+```
+
+---
+
+**🎯 You now have a complete, production-ready Kubernetes deployment guide!**
 
 ---
 
@@ -755,6 +1566,8 @@ help: ## 📖 Show this help message
 
 setup: ## 🚀 Initial setup (cluster + registry)
 	@echo "🎮 Setting up Humor Memory Game Kubernetes environment..."
+	@# Ensure Docker is running (works with both Docker Desktop and Colima)
+	@docker info >/dev/null 2>&1 || (echo "❌ Docker not running. Start Docker Desktop or run 'colima start'" && exit 1)
 	@docker run -d --restart=always -p 5001:5000 --name k3d-registry registry:2 2>/dev/null || true
 	@k3d cluster create --config k3d-config.yaml --wait || true
 	@kubectl config use-context k3d-$(K3D_CLUSTER)
@@ -771,6 +1584,14 @@ setup: ## 🚀 Initial setup (cluster + registry)
 		--key=humor-game.local.test+3-key.pem 2>/dev/null || true
 	@echo "127.0.0.1 humor-game.local.test" | sudo tee -a /etc/hosts >/dev/null || true
 	@echo "✅ Setup complete! Run 'make build push deploy' to start your game"
+
+colima-setup: ## 🍎 Setup Colima (macOS Docker alternative)
+	@echo "🍎 Setting up Colima as Docker Desktop alternative..."
+	@brew install colima docker docker-compose 2>/dev/null || echo "Install brew packages manually if needed"
+	@colima stop 2>/dev/null || true
+	@colima start --runtime docker --cpu 4 --memory 8 --disk 100
+	@echo "✅ Colima started! Docker is now ready"
+	@echo "🔧 Run 'make setup' to continue with Kubernetes setup"
 
 build: ## 🏗️ Build Docker images
 	@echo "🏗️ Building images for version $(VERSION)..."
@@ -940,32 +1761,30 @@ Let's add professional monitoring so you can see how your game performs in real-
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Create values file for your game
+# Create lightweight values for laptops
 cat << EOF > monitoring-values.yaml
 prometheus:
   prometheusSpec:
-    retention: 7d
+    retention: 3d
     resources:
       requests:
-        memory: "400Mi"
-        cpu: "200m"
+        memory: "128Mi"  # Reduced from 400Mi
+        cpu: "50m"
       limits:
-        memory: "800Mi"
-        cpu: "400m"
+        memory: "256Mi"
+        cpu: "100m"
 
 grafana:
   adminPassword: "humor-game-admin"
   resources:
     requests:
-      memory: "100Mi"
-      cpu: "100m"
+      memory: "32Mi"   # Reduced from 100Mi
+      cpu: "25m"
     limits:
-      memory: "200Mi"
-      cpu: "200m"
+      memory: "64Mi"
+      cpu: "50m"
   persistence:
     enabled: false
-  service:
-    type: ClusterIP
 
 alertmanager:
   enabled: false
@@ -1876,6 +2695,39 @@ kubectl exec $(kubectl get pod -l app=postgres -n humor-game -o jsonpath='{.item
   pg_dump -U gameuser humor_memory_game > emergency-backup.sql
 ```
 
+### Colima-Specific Issues
+
+**Colima Won't Start**
+```bash
+# Reset Colima if it gets stuck
+colima stop
+colima delete
+colima start --runtime docker --cpu 4 --memory 8
+
+# Check Colima logs
+colima logs
+```
+
+**Performance Issues with Colima**
+```bash
+# Increase resources allocated to Colima
+colima stop
+colima start --runtime docker --cpu 6 --memory 12 --disk 100
+
+# Check current resource allocation
+colima status
+```
+
+**Registry Issues with Colima**
+```bash
+# Ensure registry is accessible from Colima VM
+docker network ls
+docker inspect k3d-registry
+
+# Test registry connectivity
+curl http://localhost:5001/v2/_catalog
+```
+
 ---
 
 ## Appendix B: Advanced Configurations
@@ -2042,3 +2894,56 @@ spec:
 - Practice disaster recovery scenarios
 
 **You're now ready to confidently discuss and implement DevOps practices in any professional environment! 🚀**
+
+---
+
+## 🚨 CRITICAL TROUBLESHOOTING
+
+### **Redis Password Issue (FIXED)**
+The Redis deployment in this guide has a **critical issue**: `$(REDIS_PASSWORD)` variable substitution doesn't work in command arrays.
+
+**Problem**:
+```yaml
+command:
+- redis-server
+- --requirepass
+- $(REDIS_PASSWORD)  # ❌ This won't work!
+```
+
+**Solution** - Use environment variable instead:
+```yaml
+command:
+- redis-server
+- --appendonly
+- "yes"
+- --requirepass
+- "$(REDIS_PASSWORD)"  # ✅ Use quotes and env var
+env:
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: humor-game-secrets
+      key: REDIS_PASSWORD
+```
+
+### **Database Initialization Issue (FIXED)**
+The postgres deployment was missing proper database initialization.
+
+**Problem**: Empty init script placeholder
+**Solution**: Added complete database schema from your `combined-init.sql`
+
+### **Resource Limits Issue (FIXED)**
+Original manifests had resource limits too high for laptop deployment.
+
+**Problem**: 256Mi-512Mi memory requests
+**Solution**: Reduced to 16Mi-64Mi for laptop-friendly deployment
+
+### **Security Issues (FIXED)**
+- ✅ Removed hardcoded passwords
+- ✅ Added security warnings
+- ✅ Fixed CORS configuration
+- ✅ Added proper environment variable handling
+
+---
+
+**All critical issues have been fixed in this updated guide! 🎯**

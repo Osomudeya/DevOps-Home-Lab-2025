@@ -23,8 +23,12 @@ help: ## 📖 Show this help message
 setup: ## Initial project setup
 	@echo "🎮 Setting up Humor Memory Game development environment..."
 	@if [ ! -f $(ENV_FILE) ]; then \
-		cp .env.example $(ENV_FILE); \
-		echo "📁 Created .env file from .env.example"; \
+		echo "⚠️  No .env file found. Please create one manually:"; \
+		echo "   1. Copy env.template to .env (if available)"; \
+		echo "   2. Or create .env with required variables"; \
+		echo "   3. Set secure passwords and secrets"; \
+		echo "   See README.md for required environment variables"; \
+		exit 1; \
 	fi
 	@mkdir -p logs/nginx logs/app
 	@mkdir -p nginx/ssl

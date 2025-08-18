@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: humor-game-config
+  namespace: humor-game
+data:
+  NODE_ENV: "production"
+  DB_NAME: "humor_memory_game"
+  DB_USER: "gameuser"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  API_PORT: "3001"
+  # Production domain - update these for your domain
+  CORS_ORIGIN: "https://gameapp.games"
+  FRONTEND_URL: "https://gameapp.games"
+  API_BASE_URL: "https://gameapp.games"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: humor-game-secrets
+  namespace: humor-game
+type: Opaque
+stringData:
+  # These will be populated from .env file during deployment
+  DB_PASSWORD: "${DB_PASSWORD}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  JWT_SECRET: "${JWT_SECRET}"
+

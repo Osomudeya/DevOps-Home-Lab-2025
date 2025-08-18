@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: humor-game
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: localhost:5001/humor-game/frontend:v1.0.0
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "25m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: humor-game
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+

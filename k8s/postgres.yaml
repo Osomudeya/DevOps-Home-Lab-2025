@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: humor-game
+data:
+  01-init.sql: |
+    -- Minimal schema for Humor Memory Game
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    DROP TABLE IF EXISTS games CASCADE;
+    DROP TABLE IF EXISTS users CASCADE;
+
+    CREATE TABLE users (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      username VARCHAR(50) UNIQUE NOT NULL,
+      email VARCHAR(100),
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE games (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      score INTEGER NOT NULL DEFAULT 0,
+      moves INTEGER NOT NULL DEFAULT 0,
+      time_elapsed INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: humor-game
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: humor-game-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: humor-game-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: humor-game-secrets
+                  key: DB_PASSWORD
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+      volumes:
+        - name: postgres-storage
+          emptyDir: {}
+        - name: init-scripts
+          configMap:
+            name: postgres-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: humor-game
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+
