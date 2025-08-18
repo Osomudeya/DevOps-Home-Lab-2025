@@ -481,9 +481,9 @@ data:
   REDIS_PORT: "6379"
   API_PORT: "3001"
   # Fixed CORS for Kubernetes ingress
-  CORS_ORIGIN: "https://humor-game.local.test"
-  FRONTEND_URL: "https://humor-game.local.test"
-  API_BASE_URL: "https://humor-game.local.test"
+  CORS_ORIGIN: "https://gameapp.games"
+  FRONTEND_URL: "https://gameapp.games"
+  API_BASE_URL: "https://gameapp.games"
 ---
 apiVersion: v1
 kind: Secret
@@ -834,10 +834,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - humor-game.local.test
+    - gameapp.games
     secretName: humor-game-tls
   rules:
-  - host: humor-game.local.test
+  - host: gameapp.games
     http:
       paths:
       - path: /api
@@ -992,10 +992,13 @@ helm install ingress-nginx ingress-nginx/ingress-nginx \
 # Install local CA (one-time)
 mkcert -install
 
-# Generate certificates for your production domain
+# Option 1: Production Domain (RECOMMENDED for Cloudflare)
 mkcert "gameapp.games" "*.gameapp.games" localhost 127.0.0.1
 
-# Create Kubernetes TLS secret
+# Option 2: Local Development (Alternative if you want to test locally first)
+# mkcert "humor-game.local.test" "*.127.0.0.1.sslip.io" localhost 127.0.0.1
+
+# Create Kubernetes TLS secret (use the filename from your chosen option)
 kubectl create secret tls humor-game-tls \
   --cert=gameapp.games+2.pem \
   --key=gameapp.games+2-key.pem
@@ -1003,6 +1006,8 @@ kubectl create secret tls humor-game-tls \
 # Add to hosts file for local testing
 echo "127.0.0.1 gameapp.games" | sudo tee -a /etc/hosts
 ```
+
+**🎯 Recommendation**: Use Option 1 (`gameapp.games`) since you're planning Cloudflare exposure. This makes your setup production-ready from the start!
 
 #### **Step 5: Build and Push Your App Images**
 ```bash
@@ -1117,6 +1122,13 @@ Cloudflare Tunnel creates a secure connection from the internet to your local Ku
 1. **Cloudflare Account**: Sign up at [cloudflare.com](https://cloudflare.com)
 2. **Domain**: Add your domain (e.g., `gameapp.games`) to Cloudflare
 3. **DNS Management**: Ensure Cloudflare manages your domain's DNS
+
+### **🎯 Domain Choice for Cloudflare**
+**Use your production domain (`gameapp.games`) from the start because:**
+- ✅ **Seamless Cloudflare integration** - no certificate regeneration needed
+- ✅ **Production-ready setup** - same domain for local and production
+- ✅ **Consistent configuration** - all manifests use the same domain
+- ✅ **No reconfiguration** when you expose via Cloudflare
 
 ### **Step-by-Step Cloudflare Setup**
 
