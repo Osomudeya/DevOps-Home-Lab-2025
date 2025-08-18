@@ -268,7 +268,16 @@ kubectl config use-context k3d-humor-game-cluster
 
 ### **🚨 IMPORTANT: Port Conflict Resolution**
 
-**If you get port conflicts with Docker Compose:**
+**Your Docker Compose uses these ports:**
+- **Frontend**: `localhost:3002` (mapped to container port 3000)
+- **Backend**: `localhost:3001` (mapped to container port 3001)
+- **Nginx**: `localhost:80` and `localhost:443` (reverse proxy)
+- **PostgreSQL**: `localhost:5432`
+- **Redis**: `localhost:6379`
+
+**Port Conflict**: Your nginx is using ports 80/443, which conflicts with k3d's default ports.
+
+**Solution - Use different ports for k3d:**
 ```bash
 # Clean approach - create cluster with different ports
 k3d cluster create humor-game-cluster \
@@ -280,10 +289,14 @@ k3d cluster create humor-game-cluster \
   --registry-use k3d-k3d-registry:5001
 ```
 
-**Port Mapping:**
-- **HTTP**: `localhost:8080` → Cluster port 80
-- **HTTPS**: `localhost:8443` → Cluster port 443
-- **Docker Compose**: Keeps using ports 80 and 443
+**Final Port Mapping:**
+- **Docker Compose**: 
+  - Frontend: `localhost:3002`
+  - Backend: `localhost:3001`
+  - Nginx: `localhost:80` and `localhost:443`
+- **Kubernetes (k3d)**:
+  - HTTP: `localhost:8080` → Cluster port 80
+  - HTTPS: `localhost:8443` → Cluster port 443
 - **No conflicts!** 🎯
 
 ### Verify Your Cluster
@@ -3026,7 +3039,14 @@ k3d cluster create --config k3d-config.yaml
 ## 🚨 CRITICAL TROUBLESHOOTING
 
 ### **Port Conflict Issue (FIXED)**
-**Problem**: Docker Compose using ports 80/443 conflicts with k3d cluster creation.
+**Problem**: Your Docker Compose nginx using ports 80/443 conflicts with k3d cluster creation.
+
+**Your Docker Compose Ports**:
+- **Frontend**: `localhost:3002` (container port 3000)
+- **Backend**: `localhost:3001` (container port 3001)
+- **Nginx**: `localhost:80` and `localhost:443` (reverse proxy)
+- **PostgreSQL**: `localhost:5432`
+- **Redis**: `localhost:6379`
 
 **Solution**: Use different ports for k3d cluster:
 ```bash
