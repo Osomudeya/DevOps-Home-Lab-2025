@@ -5,20 +5,15 @@ metadata:
 servers: 1
 agents: 2
 ports:
-  - port: 80:80
+  - port: 8080:80
     nodeFilters:
       - loadbalancer
-  - port: 443:443
+  - port: 8443:443
     nodeFilters:
       - loadbalancer
 registries:
-  use:
-    - k3d-registry:5000
-  config: |
-    mirrors:
-      "localhost:5001":
-        endpoint:
-          - http://k3d-registry:5000
+  use: 
+    - k3d-k3d-registry:5000
 options:
   k3s:
     extraArgs:

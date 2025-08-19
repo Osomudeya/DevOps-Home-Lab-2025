@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: localhost:5001/humor-game/frontend:v1.0.0
+          image: k3d-k3d-registry:5000/humor-game/frontend:v1.0.0
           ports:
             - containerPort: 80
           resources:

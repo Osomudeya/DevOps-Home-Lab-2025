@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function checkAPIConnection() {
   try {
+    // API_BASE already includes /api, so we don't need to add it again
     const response = await fetch(`${API_BASE}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },

@@ -35,7 +35,9 @@ fi
 
 # Load environment variables
 print_status "Loading environment variables from .env file..."
-export $(cat .env | grep -v '^#' | xargs)
+set -a
+source .env
+set +a
 
 # Check required variables
 required_vars=("DB_PASSWORD" "REDIS_PASSWORD" "JWT_SECRET")

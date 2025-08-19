@@ -1,0 +1,150 @@
+name: 🚀 Deploy to Kubernetes
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: localhost:5001
+  IMAGE_NAME_BACKEND: humor-game-backend
+  IMAGE_NAME_FRONTEND: humor-game-frontend
+  KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_DATA }}
+
+jobs:
+  test:
+    name: 🧪 Test Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+          
+      - name: 🧪 Run tests
+        run: |
+          cd backend
+          npm install
+          npm test
+          
+      - name: 🔍 Lint code
+        run: |
+          cd backend
+          npm run lint
+          cd ../frontend
+          npm run lint
+
+  build-and-push:
+    name: 🏗️ Build and Push Images
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🐳 Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: 🔐 Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          
+      - name: 🏗️ Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: 🏗️ Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: 🚀 Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+          
+      - name: 🔐 Setup kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ env.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          
+      - name: 📊 Deploy to Kubernetes
+        run: |
+          # Update image tags in manifests
+          sed -i "s|image: .*/${{ env.IMAGE_NAME_BACKEND }}:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}|g" k8s/backend.yaml
+          sed -i "s|image: .*/${{ env.IMAGE_NAME_FRONTEND }}:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}|g" k8s/frontend.yaml
+          
+          # Deploy
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/postgres.yaml
+          kubectl apply -f k8s/redis.yaml
+          kubectl apply -f k8s/backend.yaml
+          kubectl apply -f k8s/frontend.yaml
+          kubectl apply -f k8s/ingress.yaml
+          
+      - name: ⏳ Wait for deployment
+        run: |
+          kubectl wait --for=condition=available --timeout=300s deployment/backend -n humor-game
+          kubectl wait --for=condition=available --timeout=300s deployment/frontend -n humor-game
+          
+      - name: 🧪 Health check
+        run: |
+          kubectl get pods -n humor-game
+          kubectl get services -n humor-game
+
+  notify:
+    name: 📢 Notify Team
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+    
+    steps:
+      - name: 📢 Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          text: |
+            🚀 Deployment ${{ job.status }} for Humor Memory Game
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+            Environment: Production
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

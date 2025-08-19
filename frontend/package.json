@@ -6,7 +6,7 @@
   "scripts": {
     "start": "python3 -m http.server 3000 --directory src",
     "dev": "python3 -m http.server 3000 --directory src",
-    "build": "echo 'No build needed - static files'",
+    "build": "npm run copy-assets",
     "copy-assets": "mkdir -p dist && cp -r public/* dist/ && cp -r src/* dist/",
     "minify": "echo 'Minification skipped for simplicity'",
     "clean": "rm -rf dist",

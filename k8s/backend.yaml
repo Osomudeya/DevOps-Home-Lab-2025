@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: localhost:5001/humor-game/backend:v1.0.0
+          image: k3d-k3d-registry:5000/humor-game/backend:v1.0.0
           ports:
             - containerPort: 3001
           env:
