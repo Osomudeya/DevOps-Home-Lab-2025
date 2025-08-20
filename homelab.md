@@ -606,245 +606,372 @@ k3d cluster delete dev-cluster
 ### Business Context
 **Real-world parallel:** This milestone mirrors how companies like Shopify migrated their applications from simple deployments to Kubernetes. You'll face the same challenges around data persistence, configuration management, and service dependencies.
 
-### 2.1: Build and Distribute Container Images
+### 2.1: Deploy Your Real Application to Kubernetes
 
-First, we need to get your application images into a registry Kubernetes can access:
+**What We'll Accomplish:** Deploy your working Docker Compose app to Kubernetes and access it through your browser.
 
-```bash
-# Start local registry for development
-docker run -d --restart=always -p 5001:5000 --name k3d-registry registry:2
-
-# Connect registry to k3d cluster
-k3d cluster delete dev-cluster  # Clean slate
-k3d cluster create dev-cluster \
-  --servers 1 \
-  --agents 2 \
-  --port "8080:80@loadbalancer" \
-  --port "8443:443@loadbalancer" \
-  --registry-use k3d-registry:5000
-
-# Build and push your application images
-docker build -t localhost:5001/humor-game/backend:v1.0.0 backend/
-docker build -t localhost:5001/humor-game/frontend:v1.0.0 frontend/
-docker push localhost:5001/humor-game/backend:v1.0.0
-docker push localhost:5001/humor-game/frontend:v1.0.0
-
-# Verify images are available
-curl http://localhost:5001/v2/_catalog
-```
+**Expected Outcome:** A fully functional game accessible at `http://localhost:8080` with all features working.
 
 ### 2.2: Create Application Namespace and Configuration
 
+**What This Does:** Sets up the organizational structure and configuration for your app.
+
+**Expected Outcome:** Namespace created, ConfigMap and Secrets ready for use.
+
 ```bash
-# Create dedicated namespace
-kubectl create namespace humor-game
+# Create namespace
+kubectl apply -f k8s/namespace.yaml
 
-# Create configuration (non-sensitive data)
-kubectl create configmap humor-game-config \
-  --from-literal=DB_HOST=postgres \
-  --from-literal=DB_NAME=humor_memory_game \
-  --from-literal=DB_USER=gameuser \
-  --from-literal=REDIS_HOST=redis \
-  --from-literal=NODE_ENV=production \
-  -n humor-game
-
-# Create secrets (sensitive data)
-kubectl create secret generic humor-game-secrets \
-  --from-literal=DB_PASSWORD=gamepass123 \
-  --from-literal=REDIS_PASSWORD=gamepass123 \
-  --from-literal=JWT_SECRET=your-super-secret-jwt-key \
-  -n humor-game
+# Create ConfigMap and Secrets (already configured in files)
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
 ```
 
-**Security Note:** In production, never use hardcoded passwords. Use external secret management systems like HashiCorp Vault or cloud provider secret managers.
+**What Happens:**
+- ✅ `humor-game` namespace created
+- ✅ `humor-game-config` ConfigMap created with app settings
+- ✅ `humor-game-secrets` Secret created with passwords
 
-**Environment-Specific Commands:**
+**Note:** We're using the pre-configured YAML files from the `k8s/` directory, so you don't need to manually create configurations.
 
-**macOS (using Homebrew):**
-```bash
-# Install required tools
-brew install kubernetes-cli k3d mkcert
+### 2.3: Deploy Database Services
 
-# Option 1: Docker Desktop (if working)
-open -a Docker
-docker info
+**What This Does:** Deploys PostgreSQL and Redis databases that your app needs.
 
-# Option 2: Colima (if Docker Desktop has issues)
-# Install Colima and Docker CLI
-brew install colima docker docker-compose
-
-# Start Colima with Docker runtime
-colima start --runtime docker
-
-# Verify Docker works
-docker version
-docker run hello-world
-
-# Optional: Stop Colima when done
-colima stop
-```
-
-**Why Colima over Docker Desktop on Mac:**
-- No GUI, runs entirely in terminal
-- Uses less memory & CPU than Docker Desktop
-- Open-source & free
-- Works well with Kubernetes tools like kubectl, k3d, and minikube
-- Better compatibility with Apple Silicon (M1/M2) Macs
-
-**Linux (Ubuntu/Debian):**
-```bash
-# Install required tools
-sudo apt-get update
-sudo apt-get install -y docker.io kubectl
-curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-
-# Start Docker service
-sudo systemctl start docker
-sudo systemctl enable docker
-```
-
-**Windows (WSL2):**
-```bash
-# Install in WSL2 Ubuntu
-sudo apt-get update
-sudo apt-get install -y docker.io kubectl
-curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-
-# Start Docker service
-sudo service docker start
-```
-
-### 2.3: Deploy Stateful Services (Databases)
-
-**PostgreSQL Deployment:**
-
-The actual working PostgreSQL configuration is available in the repository at `k8s/postgres.yaml`. This file includes:
-
-- Complete database schema with tables, indexes, and functions
-- Proper volume mounts and initialization scripts
-- Service configuration for database access
-
-**Deploy the database:**
+**Expected Outcome:** Both databases running and ready to accept connections.
 
 ```bash
-# Deploy PostgreSQL using the working configuration
+# Deploy PostgreSQL
 kubectl apply -f k8s/postgres.yaml
 
-# Wait for database to be ready
-kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=120s
+# Deploy Redis
+kubectl apply -f k8s/redis.yaml
 
-# Verify database is working
-kubectl exec -it deployment/postgres -n humor-game -- psql -U gameuser -d humor_memory_game -c "SELECT version();"
+# Wait for databases to be ready
+kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=120s
+kubectl wait --for=condition=ready pod -l app=redis -n humor-game --timeout=60s
 ```
 
-**Note:** The actual `k8s/postgres.yaml` file contains the complete database schema that matches your application requirements. Don't create a simplified version - use the working one from the repository.
+**What Happens:**
+- ✅ PostgreSQL pod starts with database schema
+- ✅ Redis pod starts for caching
+- ✅ Both services become available
+- ✅ Database data persists across restarts
 
 ### 2.4: Deploy Application Services
 
-**Backend Deployment:**
+**What This Does:** Deploys your backend API and frontend web app.
 
-The actual working backend configuration is available in the repository at `k8s/backend.yaml`. This file includes:
-
-- Complete environment variable configuration
-- Health checks and readiness probes
-- Resource limits and requests
-- Proper service configuration
-- All required environment variables for database, Redis, and application settings
-
-**Deploy and test:**
+**Expected Outcome:** Both services running and communicating with databases.
 
 ```bash
-# Deploy backend using the working configuration
+# Deploy backend
 kubectl apply -f k8s/backend.yaml
 
-# Wait for backend to be ready
-kubectl wait --for=condition=ready pod -l app=backend -n humor-game --timeout=120s
+# Deploy frontend
+kubectl apply -f k8s/frontend.yaml
 
-# Test backend health
-kubectl port-forward service/backend 3001:3001 -n humor-game &
-curl http://localhost:3001/health
+# Wait for services to be ready
+kubectl wait --for=condition=ready pod -l app=backend -n humor-game --timeout=120s
+kubectl wait --for=condition=ready pod -l app=frontend -n humor-game --timeout=60s
 ```
 
-**Note:** The actual `k8s/backend.yaml` file contains the complete configuration with all environment variables, health checks, and resource management. Use this working file from the repository.
+**What Happens:**
+- ✅ Backend pod starts and connects to databases
+- ✅ Frontend pod starts with Nginx web server
+- ✅ Both services become available
+- ✅ Health checks confirm everything is working
 
-### 2.5: Test Service Communication
+### 2.5: Verify Everything is Working
+
+**What This Does:** Confirms all services are running and communicating properly.
+
+**Expected Outcome:** All pods show "Running" status and services are healthy.
 
 ```bash
-# Test database connectivity from backend
-kubectl exec -it deployment/backend -n humor-game -- nc -z postgres 5432
+# Check all pods are running
+kubectl get pods -n humor-game
 
-# Test API functionality
-kubectl exec -it deployment/backend -n humor-game -- curl -s http://localhost:3001/health
+# Check services are created
+kubectl get svc -n humor-game
 
-# Check logs for any issues
-kubectl logs -l app=backend -n humor-game --tail=20
+# Check backend logs for any errors
+kubectl logs -l app=backend -n humor-game --tail=10
 ```
 
-### Understanding Kubernetes vs Docker Compose
+**What You Should See:**
+- ✅ All pods show `1/1 Running` status
+- ✅ Services show proper ClusterIP addresses
+- ✅ Backend logs show successful database connections
 
-| Aspect | Docker Compose | Kubernetes |
-|--------|---------------|------------|
-| **Service Discovery** | Service names (postgres) | FQDN (postgres.humor-game.svc.cluster.local) |
-| **Configuration** | Environment files (.env) | ConfigMaps and Secrets |
-| **Networking** | Single bridge network | Multiple networks with policies |
-| **Scaling** | Manual (`docker-compose scale`) | Declarative (`replicas: 3`) |
-| **Health Checks** | Basic container health | Liveness and readiness probes |
-| **Rolling Updates** | Manual restart | Automatic with zero downtime |
+### Understanding What We Just Accomplished
+
+**What Changed from Docker Compose:**
+- **Configuration**: From `.env` files to Kubernetes ConfigMaps and Secrets
+- **Networking**: From simple Docker networks to Kubernetes service discovery
+- **Health Checks**: From basic container health to Kubernetes probes
+- **Deployment**: From `docker-compose up` to `kubectl apply`
+
+**What Stayed the Same:**
+- **Application Code**: No changes needed
+- **Database Schema**: Same PostgreSQL setup
+- **API Endpoints**: Same `/api/*` routes
+- **Game Functionality**: Identical user experience
 
 ### Professional Skills Checkpoint
 
-**Troubleshooting Exercise:**
-1. Scale backend to 0 replicas, observe what happens
-2. Scale back to 2 replicas, verify service recovery
-3. Delete a backend pod, watch Kubernetes recreate it
-4. Check logs to understand startup sequence
+**What You Can Now Do:**
+- ✅ Deploy a multi-service application to Kubernetes
+- ✅ Manage configuration with ConfigMaps and Secrets
+- ✅ Deploy stateful databases with persistent storage
+- ✅ Verify service health and connectivity
 
-**Can you explain:**
-- Why we separate ConfigMaps and Secrets?
-- How Kubernetes handles rolling updates differently than Docker Compose?
-- What happens if the database pod crashes?
+**Key Concepts You've Learned:**
+- **Namespaces**: Organize your applications
+- **ConfigMaps**: Store non-sensitive configuration
+- **Secrets**: Store sensitive data like passwords
+- **Services**: Enable communication between pods
+- **Health Checks**: Ensure services are truly ready
 
 ### Common Issues and Solutions
 
-| Problem | Symptoms | Root Cause | Solution |
-|---------|----------|------------|----------|
-| **ImagePullBackOff** | Pods can't start | Registry connectivity | Verify image exists: `curl localhost:5001/v2/_catalog` |
-| **CrashLoopBackOff** | Pod starts then crashes | Application error | Check logs: `kubectl logs -l app=backend -n humor-game` |
-| **Pending Pods** | Pods don't schedule | Resource constraints | Check node resources: `kubectl describe nodes` |
-| **Database Connection Failed** | Backend can't reach DB | Service discovery | Verify service: `kubectl get svc -n humor-game` |
+**If Something Goes Wrong:**
 
-**Specific Error Patterns We Debugged:**
+**Problem: Pods stuck in "Pending" status**
+```bash
+# Check what's happening
+kubectl describe pod <pod-name> -n humor-game
+```
 
-**Backend Startup Failures:**
-```
-Error: Cannot find module 'express'
-at Function.Module._resolveFilename (internal/modules/cjs/loader.js:965:15)
-```
-**Root Cause:** Missing dependencies in Docker image
-**Solution:** Ensure `package.json` and `node_modules` are properly copied
+**Problem: Backend can't connect to database**
+```bash
+# Check if databases are running
+kubectl get pods -n humor-game
 
-**PostgreSQL Connection Issues:**
+# Check backend logs
+kubectl logs -l app=backend -n humor-game
 ```
-Error: password authentication failed for user "gameuser"
-```
-**Root Cause:** Database credentials mismatch
-**Solution:** Verify ConfigMap and Secret values match database configuration
 
-**Ingress Configuration Errors:**
-```
-Warning: extensions/v1beta1 Ingress is deprecated in v1.22+
-```
-**Root Cause:** Using deprecated API version
-**Solution:** Use `networking.k8s.io/v1` API version
+**Problem: Frontend shows "Cannot Connect to Game Server"**
+```bash
+# Check if backend is running
+kubectl get pods -l app=backend -n humor-game
 
-**Service Endpoint Issues:**
+# Check backend health
+kubectl port-forward svc/backend 3001:3001 -n humor-game &
+curl http://localhost:3001/health
 ```
-Endpoints: <none>
+
+**Quick Fix Commands:**
+```bash
+# Restart a service
+kubectl rollout restart deployment/backend -n humor-game
+
+# Check service status
+kubectl get all -n humor-game
+
+# View recent events
+kubectl get events -n humor-game --sort-by='.lastTimestamp'
 ```
-**Root Cause:** Pod labels don't match service selector
-**Solution:** Ensure pod labels match service selector exactly
 
 **Milestone 2 Complete:** Your application runs on Kubernetes with proper configuration management, health checks, and service discovery.
+
+### **🚀 Deploy Your Real Application to Kubernetes**
+
+**Step-by-Step Deployment:**
+
+**1. Create Namespace and Configuration:**
+```bash
+# Create namespace
+kubectl apply -f k8s/namespace.yaml
+
+# Create ConfigMap and Secrets
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
+```
+
+**2. Deploy Database Services:**
+```bash
+# Deploy PostgreSQL
+kubectl apply -f k8s/postgres.yaml
+
+# Deploy Redis
+kubectl apply -f k8s/redis.yaml
+
+# Wait for databases to be ready
+kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=120s
+kubectl wait --for=condition=ready pod -l app=redis -n humor-game --timeout=60s
+```
+
+**3. Deploy Application Services:**
+```bash
+# Deploy backend
+kubectl apply -f k8s/backend.yaml
+
+# Deploy frontend
+kubectl apply -f k8s/frontend.yaml
+
+# Wait for services to be ready
+kubectl wait --for=condition=ready pod -l app=backend -n humor-game --timeout=120s
+kubectl wait --for=condition=ready pod -l app=frontend -n humor-game --timeout=60s
+```
+
+**4. Deploy Ingress Controller:**
+```bash
+# Install NGINX Ingress Controller
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm install nginx-ingress ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --create-namespace \
+  --set controller.service.type=NodePort
+
+# Deploy Ingress rules
+kubectl apply -f k8s/ingress.yaml
+```
+
+### **🌐 View Your Kubernetes App in Browser**
+
+**Method 1: Local Development (Port Forward)**
+```bash
+# Forward frontend service to localhost
+kubectl port-forward svc/frontend 8080:80 -n humor-game &
+
+# Forward backend service to localhost  
+kubectl port-forward svc/backend 3001:3001 -n humor-game &
+
+# Open in browser
+open http://localhost:8080
+```
+
+**Method 2: Production Access (Your Domain)**
+```bash
+# Forward Ingress controller to localhost
+kubectl port-forward svc/ingress-nginx-controller 8081:80 -n ingress-nginx &
+
+# Test with your domain (replace gameapp.games with your domain)
+curl -H "Host: gameapp.games" http://localhost:8081/
+
+# Test API endpoint
+curl -H "Host: gameapp.games" http://localhost:8081/api/health
+
+# Open in browser with your domain
+open http://localhost:8081
+```
+
+**Method 3: Real Production (Internet Access)**
+```bash
+# Get your external IP
+kubectl get svc -n ingress-nginx
+
+# Point your domain DNS to your external IP
+# A Record: gameapp.games → Your External IP
+
+# Access from anywhere on the internet
+# https://gameapp.games
+```
+
+### **🌍 Use Your Own Domain Name**
+
+**Replace `gameapp.games` with your domain:**
+
+1. **Update the Ingress configuration:**
+   ```bash
+   # Edit k8s/ingress.yaml
+   # Change gameapp.games to yourdomain.com
+   ```
+
+2. **Update ConfigMap for CORS:**
+   ```bash
+   # Edit k8s/configmap.yaml
+   # Add your domain to CORS_ORIGIN
+   ```
+
+3. **Point your domain DNS:**
+   ```
+   A Record: yourdomain.com → Your Server IP
+   ```
+
+4. **Access your app:**
+   ```
+   https://yourdomain.com
+   ```
+
+**What You Should See:**
+
+**Method 1 (Local):**
+- ✅ **Frontend loads** at `http://localhost:8080`
+- ✅ **Game interface** displays properly
+- ✅ **API calls work** (check browser console for successful requests)
+
+**Method 2 (Production Testing):**
+- ✅ **Frontend loads** at `http://localhost:8081` with domain header
+- ✅ **API responds** at `http://localhost:8081/api/health`
+- ✅ **Domain routing** working correctly
+
+**Method 3 (Real Production):**
+- ✅ **App accessible** from anywhere on the internet
+- ✅ **Domain working** (e.g., `https://gameapp.games`)
+- ✅ **SSL/TLS** (when configured)
+
+**Verify Everything is Working:**
+```bash
+# Check all pods are running
+kubectl get pods -n humor-game
+
+# Check services are created
+kubectl get svc -n humor-game
+
+# Check ingress is configured
+kubectl get ingress -n humor-game
+
+# Test backend health
+curl http://localhost:3001/health
+```
+
+**🎯 Success Indicators:**
+- All pods show `1/1 Running` status
+- Frontend accessible at `http://localhost:8080`
+- Backend API responding at `http://localhost:3001/health`
+- Game loads and functions without connection errors
+- Leaderboard and game data working properly
+
+**If You Encounter Issues:**
+```bash
+# Check pod logs
+kubectl logs -l app=backend -n humor-game
+kubectl logs -l app/frontend -n humor-game
+
+# Check pod status
+kubectl describe pod <pod-name> -n humor-game
+
+# Check service endpoints
+kubectl get endpoints -n humor-game
+```
+
+### **📋 Port-Forwarding Summary**
+
+**Why We Use Port-Forwarding:**
+- **Local Development**: Test your app before going live
+- **Production Testing**: Verify domain routing works
+- **Debugging**: Access services directly for troubleshooting
+
+**Port Mapping:**
+- **Frontend**: `localhost:8080` → Frontend service
+- **Backend**: `localhost:3001` → Backend service  
+- **Production**: `localhost:8081` → Ingress controller
+
+**Stop Port-Forwarding:**
+```bash
+# Find running port-forward processes
+ps aux | grep "kubectl port-forward"
+
+# Stop specific process (replace PID with actual process ID)
+kill <PID>
+
+# Or stop all port-forward processes
+pkill -f "kubectl port-forward"
+```
 
 ---
 
