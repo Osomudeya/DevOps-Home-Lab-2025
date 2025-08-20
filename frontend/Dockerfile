@@ -18,6 +18,9 @@ RUN npm run build
 # Production stage with Nginx
 FROM nginx:alpine
 
+# Install netcat for connection testing
+RUN apk add --no-cache netcat-openbsd
+
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html
 

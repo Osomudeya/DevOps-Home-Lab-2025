@@ -2,12 +2,23 @@
  * Humor Memory Game - Frontend JavaScript
  */
 
+console.log('🚀 Script file loaded successfully!');
+alert('🎯 JavaScript executed successfully!');
+
 // ========================================
 // CONFIGURATION AND CONSTANTS
 // ========================================
 
 // API configuration - use environment variable or fallback
-const API_BASE = window.API_BASE_URL || 'http://backend:3001/api';
+const API_BASE = window.API_BASE_URL || (() => {
+  // Fallback logic if window.API_BASE_URL is not set
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return '/api';
+  } else {
+    return '/api'; // Default to nginx proxy
+  }
+})();
 const CARD_FLIP_DELAY = 1500;
 const MESSAGE_DISPLAY_TIME = 3000;
 
@@ -36,16 +47,20 @@ let gameState = {
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🎮 Humor Memory Game Frontend Loading...');
+  console.log('🔧 API_BASE_URL:', window.API_BASE_URL);
+  console.log('🔧 API_BASE:', API_BASE);
 
   // Check API connectivity
   checkAPIConnection()
     .then(() => {
+      console.log('✅ API connection successful, initializing game...');
       setTimeout(() => {
         hideLoadingScreen();
         initializeGame();
       }, 2000);
     })
-    .catch(() => {
+    .catch((error) => {
+      console.error('❌ API connection failed:', error);
       showAPIError();
     });
 });

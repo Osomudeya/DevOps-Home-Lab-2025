@@ -23,14 +23,14 @@
     <script>
       // Set API base URL - handle both localhost and domain access
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        // Running in browser - connect to localhost
-        window.API_BASE_URL = 'http://backend:3001/api';
+        // Running in browser - use nginx proxy
+        window.API_BASE_URL = '/api';
       } else if (window.location.hostname === 'gameapp.games') {
         // Running via domain - use same domain for API
         window.API_BASE_URL = 'https://gameapp.games:8443/api';
       } else {
-        // Running in container - connect to backend service
-        window.API_BASE_URL = 'http://backend:3001/api';
+        // Running in container - use nginx proxy
+        window.API_BASE_URL = '/api';
       }
       console.log('🔧 API Base URL set to:', window.API_BASE_URL);
       console.log('🌐 Current hostname:', window.location.hostname);
@@ -53,7 +53,7 @@
     </script>
 
     <!-- Preload critical resources -->
-    <link rel="preload" href="/scripts/game.js?v=20250819-0108" as="script" />
+    <link rel="preload" href="/scripts/game.js" as="script" />
   </head>
   <body>
     <!-- Loading Screen -->
@@ -426,7 +426,7 @@
     </footer>
 
     <!-- JavaScript -->
-    <script src="/scripts/game.js?v=20250819-0108"></script>
+    <script src="/scripts/game.js"></script>
 
     <!-- Service Worker for PWA (optional) -->
     <script>

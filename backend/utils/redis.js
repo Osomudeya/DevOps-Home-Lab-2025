@@ -4,17 +4,11 @@
 const redis = require('redis');
 
 const client = redis.createClient({
-  host: process.env.REDIS_HOST || 'redis', // Kubernetes service name, not localhost
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD,
-  db: process.env.REDIS_DB || 0,
-  retry_strategy: function (options) {
-    if (options.error && options.error.code === 'ECONNREFUSED') {
-      // End server refused the connection, retry with exponential backoff
-      return Math.min(options.attempt * 100, 3000);
-    }
-    // Reconnect after
-    return Math.min(options.attempt * 100, 3000);
+  url: `redis://${process.env.REDIS_PASSWORD ? ':' + process.env.REDIS_PASSWORD + '@' : ''}${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}/${process.env.REDIS_DB || 0}`,
+  socket: {
+    family: 4, // Force IPv4
+    connectTimeout: 10000,
+    lazyConnect: true
   }
 });
 

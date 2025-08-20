@@ -2,14 +2,14 @@
 # GENERAL PROJECT STRUCTURE
 # ========================================
 node_modules/
-dist/
-build/
-out/
-.env
-.env.*
-!.env.example
-.DS_Store
-Thumbs.db
+# dist/
+# build/
+# out/
+# .env
+# .env.*
+# !.env.example
+# .DS_Store
+# Thumbs.db
 *.log
 *.pid
 *.seed
