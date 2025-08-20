@@ -38,6 +38,164 @@
 
 ---
 
+## 📋 **Prerequisites Installation Steps**
+
+### **Required Tools Installation**
+
+#### **macOS (Recommended)**
+```bash
+# Install all required tools at once
+brew install docker docker-compose kubectl k3d mkcert jq helm node
+
+# Verify installations
+docker --version && kubectl version --client && k3d version
+```
+
+#### **Linux (Ubuntu/Debian)**
+```bash
+# Update package list
+sudo apt-get update
+
+# Install Docker
+sudo apt-get install -y docker.io docker-compose
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $USER
+
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+# Install k3d
+curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+# Install Helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Install mkcert
+curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+chmod +x mkcert-v*-linux-amd64
+sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+
+# Install Node.js
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install jq
+sudo apt-get install -y jq
+
+# Log out and back in for Docker group changes to take effect
+# Or run: newgrp docker
+```
+
+#### **Windows (WSL2)**
+```bash
+# Install in WSL2 Ubuntu (same commands as Linux above)
+# Make sure WSL2 is enabled and Docker Desktop is installed
+
+# Alternative: Use Chocolatey
+choco install docker-desktop kubernetes-cli k3d helm nodejs
+```
+
+### **Docker Setup Verification**
+```bash
+# Start Docker (if not running)
+# macOS: Docker Desktop should be running
+# Linux: sudo systemctl start docker
+# Windows: Docker Desktop should be running
+
+# Verify Docker is working
+docker --version
+docker run hello-world
+
+# Verify Docker Compose
+docker-compose --version
+
+# Check Docker daemon status
+docker info
+```
+
+### **Kubernetes Tools Verification**
+```bash
+# Verify kubectl
+kubectl version --client
+
+# Verify k3d
+k3d version
+
+# Verify Helm
+helm version
+
+# Verify mkcert
+mkcert -version
+
+# Verify Node.js
+node --version
+npm --version
+```
+
+### **System Requirements Check**
+```bash
+# Check available memory (need at least 4GB)
+free -h  # Linux
+vm_stat   # macOS
+# Windows: Check Task Manager
+
+# Check available disk space (need at least 10GB)
+df -h     # Linux/macOS
+# Windows: Check File Explorer
+
+# Check Docker resources
+docker system df
+```
+
+### **Troubleshooting Common Issues**
+
+#### **Docker Permission Issues (Linux)**
+```bash
+# If you get "permission denied" errors:
+sudo usermod -aG docker $USER
+newgrp docker
+# Or restart your session
+```
+
+#### **Port Conflicts**
+```bash
+# Check if ports are already in use
+sudo netstat -tulpn | grep :3000
+sudo netstat -tulpn | grep :5001
+sudo netstat -tulpn | grep :8080
+
+# Kill processes using those ports if needed
+sudo kill -9 <PID>
+```
+
+#### **Docker Desktop Issues (macOS/Windows)**
+```bash
+# Reset Docker Desktop to factory defaults
+# macOS: Docker Desktop → Troubleshoot → Reset to factory defaults
+# Windows: Docker Desktop → Troubleshoot → Reset to factory defaults
+
+# Alternative: Use Colima on macOS
+brew install colima
+colima start --runtime docker
+```
+
+### **Final Verification Checklist**
+✅ Docker is running and accessible  
+✅ Docker Compose is installed  
+✅ kubectl is installed and working  
+✅ k3d is installed and working  
+✅ Helm is installed and working  
+✅ mkcert is installed and working  
+✅ Node.js is installed and working  
+✅ At least 4GB RAM available  
+✅ At least 10GB disk space available  
+
+**If any check fails, install the missing tool before proceeding.**
+
+---
+
 ## Learning Philosophy
 
 Most DevOps tutorials teach you to copy commands. This guide teaches you to **think like a platform engineer**.
