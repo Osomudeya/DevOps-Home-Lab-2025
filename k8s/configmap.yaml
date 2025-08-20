@@ -10,8 +10,8 @@ data:
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   API_PORT: "3001"
-  # Production domain - update these for your domain
-  CORS_ORIGIN: "http://localhost:8080,https://gameapp.games"
-  FRONTEND_URL: "https://gameapp.games"
-  API_BASE_URL: "https://gameapp.games"
+  # Use the same nginx proxy pattern for both environments
+  CORS_ORIGIN: "http://localhost:3000,http://localhost:8080,https://gameapp.games"
+  FRONTEND_URL: "http://localhost:8080"
+  API_BASE_URL: "/api"
 

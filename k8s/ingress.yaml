@@ -4,23 +4,38 @@ metadata:
   name: humor-game-ingress
   namespace: humor-game
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
 spec:
   ingressClassName: nginx
-  tls:
-    - hosts:
-        - gameapp.games
-      secretName: humor-game-tls
   rules:
-    - host: gameapp.games
+    - host: gameapp.local  # For local development
       http:
         paths:
-          - path: /api
+          # API routes - strip /api prefix and forward to backend
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3001
+          # Frontend routes - serve everything else from frontend
+          - path: /
             pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: gameapp.games  # For production
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: backend

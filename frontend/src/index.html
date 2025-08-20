@@ -21,35 +21,13 @@
 
     <!-- Configuration Script -->
     <script>
-      // Set API base URL - handle both localhost and domain access
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        // Running in browser - use nginx proxy
-        window.API_BASE_URL = '/api';
-      } else if (window.location.hostname === 'gameapp.games') {
-        // Running via domain - use same domain for API
-        window.API_BASE_URL = 'https://gameapp.games:8443/api';
-      } else {
-        // Running in container - use nginx proxy
-        window.API_BASE_URL = '/api';
-      }
+      // Simple, consistent API configuration for both environments
+      // Always use nginx proxy pattern
+      window.API_BASE_URL = '/api';
+      
       console.log('🔧 API Base URL set to:', window.API_BASE_URL);
       console.log('🌐 Current hostname:', window.location.hostname);
       console.log('🔗 Current URL:', window.location.href);
-      console.log('📱 User Agent:', navigator.userAgent);
-      
-      // Test API connection immediately
-      console.log('🧪 Testing API connection...');
-      fetch(window.API_BASE_URL)
-        .then(response => {
-          console.log('✅ Initial API test successful:', response.status);
-          return response.json();
-        })
-        .then(data => {
-          console.log('📡 API response:', data.message);
-        })
-        .catch(error => {
-          console.error('❌ Initial API test failed:', error);
-        });
     </script>
 
     <!-- Preload critical resources -->
