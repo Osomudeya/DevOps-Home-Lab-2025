@@ -462,6 +462,45 @@ web-xxxxxxxxxx-xxxxx   1/1     Running   0          30s
 web-xxxxxxxxxx-xxxxx   1/1     Running   0          30s
 ```
 
+### **View Your Deployed App in Browser**
+
+**Expose the Service Externally:**
+```bash
+# Create a NodePort service to access from outside the cluster
+kubectl expose deployment web --port=80 --type=NodePort -n game-dev
+
+# Get the NodePort assigned
+kubectl get svc web -n game-dev
+```
+
+**Expected Service Output:**
+```
+NAME   TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+web    NodePort   10.43.123.45    <none>        80:30000/TCP   30s
+```
+
+**Access Your App:**
+```bash
+# Open in browser (replace 30000 with your actual NodePort)
+open http://localhost:30000
+
+# Or manually navigate to: http://localhost:30000
+```
+
+**What You Should See:**
+- ✅ **Nginx welcome page** with "Welcome to nginx!"
+- ✅ **Success message** confirming your first Kubernetes deployment works
+- ✅ **Real web server** running in Kubernetes (not just terminal output)
+
+**Verify It's Working:**
+```bash
+# Test from terminal
+curl http://localhost:30000
+
+# Check service details
+kubectl describe svc web -n game-dev
+```
+
 ### 1.3: Test Service Discovery
 
 ```bash
