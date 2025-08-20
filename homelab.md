@@ -155,6 +155,103 @@ k3d version        # 5.6+
 - **Windows:** Use WSL2 or Docker Desktop, `C:\Windows\System32\drivers\etc\hosts`
 - **Shell:** Works with bash, zsh, or PowerShell (adjust commands accordingly)
 
+---
+
+## 🐳 **Verify Your Docker App Works First**
+Before moving to Kubernetes, let's ensure your Docker Compose application is working correctly. This step confirms everything is built and running properly.
+
+### **Build and Test Your Application**
+```bash
+# Navigate to your project directory
+cd /Users/mac/Downloads/game-app-laptop-demo
+
+# Build your application images
+docker-compose build
+
+# Start your application
+docker-compose up -d
+
+# Wait for services to start (about 30 seconds)
+sleep 30
+
+# Check service status
+docker-compose ps
+
+# Test your application in the browser
+open http://localhost:3000
+
+# Test API endpoints
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/scores
+
+# Check logs for any errors
+docker-compose logs backend
+docker-compose logs frontend
+docker-compose logs postgres
+```
+
+### **Verify Everything is Working**
+Your application should now be accessible at `http://localhost:3000` with:
+- ✅ Frontend loading properly
+- ✅ Backend API responding to health checks
+- ✅ Database connection working
+- ✅ Redis connection working
+- ✅ Game functionality working
+
+**If you encounter issues:**
+```bash
+# Check specific service logs
+docker-compose logs [service-name]
+
+# Restart a specific service
+docker-compose restart [service-name]
+
+# View all running containers
+docker ps
+
+# Check network connectivity
+docker network ls
+docker network inspect game-app-laptop-demo_default
+```
+
+### **Confirm All Services Are Healthy**
+```bash
+# Verify all containers are running
+docker-compose ps
+
+# Expected output should show:
+# - frontend: Up
+# - backend: Up  
+# - postgres: Up
+# - redis: Up
+# - nginx: Up
+
+# Test database connectivity
+docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT version();"
+
+# Test Redis connectivity
+docker-compose exec redis redis-cli ping
+```
+
+### **Clean Up Before Moving to Kubernetes**
+Once you've confirmed everything works in your browser and all tests pass:
+
+```bash
+# Stop and remove all containers
+docker-compose down
+
+# Remove volumes (optional - this will delete your data)
+# docker-compose down -v
+
+# Verify cleanup
+docker ps
+docker-compose ps
+```
+
+**✅ Checkpoint:** Your Docker Compose application is working perfectly and you've verified all functionality before proceeding to Kubernetes.
+
+---
+
 ### 1.1: Create Your First Kubernetes Cluster
 
 **Mental Model:** Think of Docker Compose as a single restaurant kitchen. Kubernetes is like a restaurant management company that can operate hundreds of kitchens across different locations.
