@@ -24,7 +24,7 @@
       // Set API base URL - handle both localhost and domain access
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         // Running in browser - connect to localhost
-        window.API_BASE_URL = 'http://localhost:3001/api';
+        window.API_BASE_URL = 'http://backend:3001/api';
       } else if (window.location.hostname === 'gameapp.games') {
         // Running via domain - use same domain for API
         window.API_BASE_URL = 'https://gameapp.games:8443/api';

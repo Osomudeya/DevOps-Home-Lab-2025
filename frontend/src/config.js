@@ -2,7 +2,7 @@
 // This script sets up environment-specific variables
 
 // Set API base URL from environment or use default
-window.API_BASE_URL = window.API_BASE_URL || 'http://localhost:3001/api';
+window.API_BASE_URL = window.API_BASE_URL || 'http://backend:3001/api';
 
 // Log configuration for debugging
 console.log('🔧 Frontend Configuration:', {

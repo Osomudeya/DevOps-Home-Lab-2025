@@ -83,6 +83,7 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
           image: prom/prometheus:latest
@@ -289,7 +290,7 @@ spec:
     matchLabels:
       app: backend
   endpoints:
-    - port: 3001
+    - port: "3001"
       path: /metrics
       interval: 15s
 ---
@@ -303,6 +304,6 @@ spec:
     matchLabels:
       app: frontend
   endpoints:
-    - port: 80
+    - port: "80"
       path: /metrics
       interval: 15s

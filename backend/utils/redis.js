@@ -3,29 +3,20 @@
 
 const redis = require('redis');
 
-// Redis configuration from environment variables
-const redisConfig = {
-  socket: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT) || 6379,
-    reconnectStrategy: (retries) => {
-      if (retries > 20) {
-        console.error('❌ Redis: Too many reconnection attempts, giving up');
-        return new Error('Too many retries');
-      }
-      console.log(`🔄 Redis: Reconnection attempt ${retries}`);
-      return Math.min(retries * 50, 500); // Exponential backoff
-    },
-  },
-  password: process.env.REDIS_PASSWORD || undefined,
-  database: parseInt(process.env.REDIS_DB) || 0,
-  retryDelayOnFailover: 100,
-  maxRetriesPerRequest: 3,
-  lazyConnect: true,
-};
-
-// Create Redis client
-const client = redis.createClient(redisConfig);
+const client = redis.createClient({
+  host: process.env.REDIS_HOST || 'redis', // Kubernetes service name, not localhost
+  port: process.env.REDIS_PORT || 6379,
+  password: process.env.REDIS_PASSWORD,
+  db: process.env.REDIS_DB || 0,
+  retry_strategy: function (options) {
+    if (options.error && options.error.code === 'ECONNREFUSED') {
+      // End server refused the connection, retry with exponential backoff
+      return Math.min(options.attempt * 100, 3000);
+    }
+    // Reconnect after
+    return Math.min(options.attempt * 100, 3000);
+  }
+});
 
 // Redis event handlers
 client.on('error', (err) => {

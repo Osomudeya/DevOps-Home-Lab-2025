@@ -14,16 +14,4 @@ data:
   CORS_ORIGIN: "http://localhost:8080,https://gameapp.games"
   FRONTEND_URL: "https://gameapp.games"
   API_BASE_URL: "https://gameapp.games"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: humor-game-secrets
-  namespace: humor-game
-type: Opaque
-stringData:
-  # These will be populated from .env file during deployment
-  DB_PASSWORD: "${DB_PASSWORD}"
-  REDIS_PASSWORD: "${REDIS_PASSWORD}"
-  JWT_SECRET: "${JWT_SECRET}"
 

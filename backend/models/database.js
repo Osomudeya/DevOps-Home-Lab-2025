@@ -26,8 +26,16 @@ const dbConfig = {
   create_retry_interval_millis: 200,
 };
 
-// Create connection pool
-const pool = new Pool(dbConfig);
+const pool = new Pool({
+  host: process.env.DB_HOST || 'postgres', // Kubernetes service name, not localhost
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'humor_memory_game',
+  user: process.env.DB_USER || 'gameuser',
+  password: process.env.DB_PASSWORD, // No fallback - fail if not provided
+  max: parseInt(process.env.DB_MAX_CONNECTIONS) || 20,
+  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT) || 30000,
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT) || 2000,
+});
 
 // Enhanced error handling
 pool.on('error', (err, client) => {

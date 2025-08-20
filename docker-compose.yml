@@ -65,9 +65,9 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-gamepass123}
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
-      API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      API_BASE_URL: ${API_BASE_URL:-http://backend:3001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://frontend:80}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://frontend:80}
     # SECURITY: Backend port not exposed in production
     # ports:
     #   - "${API_PORT:-3001}:${API_PORT:-3001}"
@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      REACT_APP_API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
+      REACT_APP_API_BASE_URL: ${API_BASE_URL:-http://backend:3001}
     ports:
       - "3000:80"
     networks:

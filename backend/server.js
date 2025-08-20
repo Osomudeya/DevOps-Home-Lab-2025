@@ -32,10 +32,11 @@ app.use(
 // CORS configuration for separated frontend
 // Parse CORS_ORIGIN environment variable - support both string and array formats
 let corsOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3002',
-  'http://localhost:80',
-  'http://frontend',
+  'http://localhost:3000', // For local development
+  'http://localhost:3002', // For local development
+  'http://localhost:80',   // For local development
+  'http://frontend',       // Kubernetes service name
+  'https://gameapp.games:8443',  // Add your domain for production
 ];
 
 if (process.env.CORS_ORIGIN) {
@@ -111,6 +112,37 @@ app.get('/health', async (req, res) => {
       message: 'The game API is taking a short break! 🎮💤',
     });
   }
+});
+
+// ========================================
+// PROMETHEUS METRICS ENDPOINT
+// ========================================
+
+// Simple metrics for Prometheus
+let requestCount = 0;
+let activeGames = 0;
+
+app.get('/metrics', (req, res) => {
+  res.set('Content-Type', 'text/plain');
+  res.send(`
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{method="GET",route="/metrics"} ${requestCount}
+
+# HELP humor_game_active_games Current number of active games
+# TYPE humor_game_active_games gauge
+humor_game_active_games ${activeGames}
+
+# HELP up Service health status
+# TYPE up gauge
+up 1
+`);
+});
+
+// Increment request counter for all requests
+app.use((req, res, next) => {
+  requestCount++;
+  next();
 });
 
 // ========================================
@@ -245,13 +277,12 @@ async function startServer() {
       console.log('\n🎮 ========================================');
       console.log('🎯 HUMOR MEMORY GAME API SERVER STARTED! 😂');
       console.log('🎮 ========================================');
-      console.log(`🌐 API Server running on: http://localhost:${PORT}`);
-      console.log(`🔧 API Endpoints: http://localhost:${PORT}/api`);
-      console.log(`💊 Health Check: http://localhost:${PORT}/health`);
-      console.log(`🏗️  Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🌐 API Server running on port: ${PORT}`);
+      console.log(`🔧 API Endpoints: /api`);
+      console.log(`💊 Health Check: /health`);
+      console.log(`📊 Metrics Endpoint: /metrics`);
+      console.log(`🚀 Ready to serve game requests!`);
       console.log('🎮 ========================================\n');
-      console.log('🚀 API ready for frontend connections!');
-      console.log('🎯 Serving game data with style! 😄\n');
     });
 
     // Graceful shutdown handling
