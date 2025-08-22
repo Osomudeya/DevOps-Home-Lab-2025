@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: humor-game
+data:
+  API_BASE_URL: "/api"
+  NODE_ENV: "production"
+  # Add any other frontend configuration here
+  # This ensures consistency between Docker Compose and Kubernetes

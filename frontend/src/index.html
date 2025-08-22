@@ -19,15 +19,38 @@
     <!-- CSS -->
     <link rel="stylesheet" href="/styles/main.css?v=20250819" />
 
-    <!-- Configuration Script -->
+    <!-- Configuration Script - MUST RUN BEFORE ANY OTHER SCRIPTS -->
     <script>
-      // Simple, consistent API configuration for both environments
-      // Always use nginx proxy pattern
-      window.API_BASE_URL = '/api';
+      console.log('🚀 HTML Configuration Script Starting...');
       
+      // Environment-driven API configuration
+      // Works in both Docker Compose (nginx proxy) and Kubernetes (ingress)
+      window.API_BASE_URL = '${API_BASE_URL}';
+      window.ENVIRONMENT = '${NODE_ENV}';
+      window.BUILD_TIMESTAMP = '${BUILD_TIMESTAMP}';
+      
+      // Validation and fallbacks
+      if (!window.API_BASE_URL || window.API_BASE_URL === '') {
+        console.warn('⚠️ API_BASE_URL not set, using fallback /api');
+        window.API_BASE_URL = '/api';
+      }
+      
+      // Ensure configuration is complete before proceeding
+      window.CONFIG_READY = true;
+      
+      console.log('🔧 Environment:', window.ENVIRONMENT);
       console.log('🔧 API Base URL set to:', window.API_BASE_URL);
+      console.log('🔧 Build Timestamp:', window.BUILD_TIMESTAMP);
       console.log('🌐 Current hostname:', window.location.hostname);
       console.log('🔗 Current URL:', window.location.href);
+      console.log('✅ Configuration loaded successfully');
+      
+      // Prevent any other scripts from overriding this
+      Object.defineProperty(window, 'API_BASE_URL', {
+        value: window.API_BASE_URL,
+        writable: false,
+        configurable: false
+      });
     </script>
 
     <!-- Preload critical resources -->
@@ -404,7 +427,7 @@
     </footer>
 
     <!-- JavaScript -->
-    <script src="/scripts/game.js"></script>
+    <script src="/scripts/game.js?v=20250821"></script>
 
     <!-- Service Worker for PWA (optional) -->
     <script>

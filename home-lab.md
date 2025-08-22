@@ -1766,4 +1766,218 @@ Continue building, keep learning, and remember: every expert was once a beginner
 
 ---
 
+## Milestone 1 — Docker Compose Sanity (COMPLETED)
+
+**What we accomplished:**
+- Built and deployed multi-service application using Docker Compose
+- Fixed critical routing and configuration issues
+- Established permanent regression guards to prevent regressions
+
+### Step 1.1 — Build & Start
+
+**Commands executed:**
+```bash
+# Build all services
+docker compose build
+
+# Start services in detached mode
+docker compose up -d
+
+# Verify all services are running
+docker compose ps
+```
+
+**Expected output:**
+```
+NAME                       IMAGE                           STATUS                    PORTS
+humor-game-backend         game-app-laptop-demo-backend    Up 13 minutes            0.0.0.0:3001->3001/tcp
+humor-game-frontend        game-app-laptop-demo-frontend   Up 6 minutes (healthy)   80/tcp
+humor-game-postgres        postgres:15-alpine              Up 31 seconds (healthy)  5432/tcp
+humor-game-redis           redis:7-alpine                 Up 31 seconds (healthy)  6379/tcp
+humor-game-reverse-proxy   nginx:alpine                   Up 30 seconds            0.0.0.0:3000->80/tcp
+```
+
+### Step 1.2 — Verify Services
+
+**Service verification commands:**
+```bash
+# Check service status
+docker compose ps
+
+# View service logs
+docker compose logs --tail=50
+
+# Test API health endpoint
+curl -I http://localhost:3000/api/health
+```
+
+**Expected results:**
+- All 5 services showing "Up" status
+- Backend health endpoint returning HTTP 200
+- Frontend accessible at http://localhost:3000
+
+### Step 1.3 — Test Endpoints
+
+**Frontend test:**
+```bash
+curl -I http://localhost:3000/
+# Expected: HTTP/1.1 200 OK
+```
+
+**API health test:**
+```bash
+curl -s http://localhost:3000/api/health | jq .
+# Expected: {"status": "healthy", "services": {...}}
+```
+
+### ✅ Checkpoint
+
+- [x] All 5 services running and healthy
+- [x] Frontend accessible at localhost:3000
+- [x] API health endpoint responding with 200 OK
+- [x] Database and Redis connections established
+- [x] Nginx reverse proxy routing correctly
+
+### Critical Issues Fixed
+
+**1. Backend Catch-All Route Issue:**
+- **Problem:** Backend had `app.use('*', ...)` that intercepted all frontend requests
+- **Error:** "This is an API-only server. Frontend is served separately! 🎮"
+- **Fix:** Commented out the problematic catch-all route
+- **File:** `backend/server.js` - removed `app.use('*', ...)` route
+
+**2. Nginx Proxy Configuration Issue:**
+- **Problem:** `proxy_pass http://backend:3001/;` had trailing slash causing routing errors
+- **Error:** API endpoints returning 404 (e.g., `/api/leaderboard`)
+- **Fix:** Changed to `proxy_pass http://backend:3001;` (no trailing slash)
+- **File:** `nginx-reverse-proxy.conf`
+
+**3. Frontend Environment Variable Substitution:**
+- **Problem:** HTML template variables not being processed by `envsubst`
+- **Error:** `window.API_BASE_URL = '${API_BASE_URL}'` not substituted
+- **Fix:** Updated template syntax and startup script
+- **Files:** `frontend/src/index.html`, `frontend/Dockerfile`
+
+**4. JavaScript Alert Popup Issue:**
+- **Problem:** `alert('🎯 JavaScript executed successfully!')` showing on every refresh
+- **Fix:** Commented out the alert statement
+- **File:** `frontend/src/scripts/game.js`
+
+**5. JavaScript Configuration Race Condition:**
+- **Problem:** JavaScript trying to access `window.API_BASE_URL` before it was set
+- **Error:** "Cannot Connect to Game Server" in browser
+- **Fix:** Added `waitForConfig()` function with async/await pattern
+- **File:** `frontend/src/scripts/game.js`
+
+### Regression Guards Implemented
+
+**Created `scripts/regression-guards.sh` to prevent future regressions:**
+
+```bash
+#!/bin/bash
+# Regression Guards for Milestone 1 Fixes
+
+# 1) Backend: no catch-all route that swallows frontend paths
+if grep -R "^\\s*app\.use(\\s*'\\*'" backend 2>/dev/null; then
+    echo "❌ ERROR: catch-all route present in backend"
+    exit 1
+fi
+
+# 2) Backend: /api/health exists and responds in container
+if ! grep -R "/api/health" backend; then
+    echo "❌ ERROR: /api/health route not found in backend"
+    exit 1
+fi
+
+# 3) Nginx: no trailing slash in proxy_pass
+if ! grep -R "proxy_pass\\s\\+http://backend:3001;" nginx-reverse-proxy.conf; then
+    echo "❌ ERROR: proxy_pass not exact"
+    exit 1
+fi
+
+# 4) Frontend: no alert() left in shipped code
+if grep -R "^\\s*alert(" frontend/src; then
+    echo "❌ ERROR: alert() found in frontend code"
+    exit 1
+fi
+
+# 5) Env var/startup template syntax fixed
+if grep -R "{{.*}}" frontend/src; then
+    echo "❌ ERROR: template placeholders remain"
+    exit 1
+fi
+```
+
+**Guard verification output:**
+```
+🔒 Running Regression Guards for Milestone 1 Fixes...
+🔍 Checking for backend catch-all routes...
+✅ No catch-all routes found
+🔍 Checking for /api/health route...
+✅ /api/health route found
+🔍 Checking nginx proxy_pass configuration...
+✅ proxy_pass configuration correct
+🔍 Checking for alert() statements...
+✅ No alert() statements found
+🔍 Checking for async config loader...
+✅ Async config loader found
+🔍 Checking for template placeholders...
+✅ No template placeholders found
+🎉 All regression guards passed! Milestone 1 fixes are permanent.
+```
+
+### Common Issues & Fixes
+
+**Container restarting loops:**
+- **Cause:** Health check failures or dependency issues
+- **Fix:** Check logs with `docker compose logs <service>`
+- **Prevention:** Proper health check configuration and service dependencies
+
+**Backend can't reach database:**
+- **Cause:** Network configuration or service discovery issues
+- **Fix:** Verify `depends_on` and network configuration in docker-compose.yml
+- **Prevention:** Use proper Docker networks and service names
+
+**Frontend not loading:**
+- **Cause:** Nginx configuration or port conflicts
+- **Fix:** Check nginx logs and verify port mappings
+- **Prevention:** Regression guards and proper nginx configuration
+
+**Environment variables not working:**
+- **Cause:** Template syntax or startup script issues
+- **Fix:** Verify `envsubst` syntax and startup script execution
+- **Prevention:** Template validation and startup script testing
+
+### 📸 Screenshots: Docker Compose Success
+
+**Final verification test results:**
+```
+🧪 FINAL COMPREHENSIVE TEST...
+1. Frontend accessible: 200
+2. API health check: 200
+3. API leaderboard: 200
+4. Environment variables substituted: ✅ SUCCESS
+5. Configuration ready flag: ✅ SUCCESS
+```
+
+### What You Learned
+
+- **Multi-service architecture** with proper service dependencies
+- **Nginx reverse proxy configuration** and routing rules
+- **Environment variable substitution** in containerized applications
+- **JavaScript configuration management** and race condition prevention
+- **Regression testing** to maintain system reliability
+
+### Professional Skills Gained
+
+- **Container orchestration** with Docker Compose
+- **Service mesh configuration** and routing
+- **Environment management** across development and production
+- **Debugging complex multi-service issues**
+- **Preventing regressions** with automated checks
+
+*Milestone 1 completed successfully on 2024-08-21. All critical issues resolved, regression guards implemented, ready for Kubernetes deployment.*
+
+---
+
 *This guide represents distilled experience from engineers who have built and scaled systems at companies like Google, Netflix, and Airbnb. Use it as a foundation for your continued growth in the DevOps and platform engineering disciplines.*

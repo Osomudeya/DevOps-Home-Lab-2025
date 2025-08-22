@@ -18,6 +18,17 @@ spec:
           image: k3d-k3d-registry:5000/humor-game/frontend:v1.0.0
           ports:
             - containerPort: 80
+          env:
+            - name: API_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: API_BASE_URL
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: NODE_ENV
           resources:
             requests:
               memory: "16Mi"

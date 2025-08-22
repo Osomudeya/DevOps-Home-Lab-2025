@@ -101,8 +101,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       REACT_APP_API_BASE_URL: ${API_BASE_URL:-/api}
-    ports:
-      - "3000:80"
+    # ports:
+    #   - "3000:80"
     networks:
       - frontend-network
     depends_on:
@@ -114,7 +114,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    # Wait for backend to be fully ready before starting nginx
+    # Wait for backend to be fully ready before starting nginx with env substitution
     command: >
       sh -c "
         echo 'Waiting for backend to be ready...' &&
@@ -122,8 +122,8 @@ services:
           echo 'Backend not ready, waiting...' &&
           sleep 2;
         done &&
-        echo 'Backend is ready! Starting nginx...' &&
-        nginx -g 'daemon off;'
+        echo 'Backend is ready! Starting nginx with env substitution...' &&
+        /start.sh
       "
 
 volumes:

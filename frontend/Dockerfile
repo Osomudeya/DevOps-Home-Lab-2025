@@ -27,6 +27,16 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Install envsubst for environment variable substitution
+RUN apk add --no-cache gettext
+
+# Create startup script for environment variable substitution
+RUN echo '#!/bin/sh' > /start.sh && \
+    echo 'envsubst < /usr/share/nginx/html/index.html > /tmp/index.html' >> /start.sh && \
+    echo 'mv /tmp/index.html /usr/share/nginx/html/index.html' >> /start.sh && \
+    echo 'nginx -g "daemon off;"' >> /start.sh && \
+    chmod +x /start.sh
+
 # Fix nginx permissions (run as root for nginx)
 RUN chmod -R 755 /usr/share/nginx/html
 
@@ -43,5 +53,5 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/ || exit 1
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Start nginx with environment variable substitution
+CMD ["/start.sh"]

@@ -3,17 +3,35 @@
  */
 
 console.log('🚀 Script file loaded successfully!');
-alert('🎯 JavaScript executed successfully!');
+// alert('🎯 JavaScript executed successfully!'); // Removed popup
 
 // ========================================
 // CONFIGURATION AND CONSTANTS
 // ========================================
 
+// Wait for configuration to be ready
+function waitForConfig() {
+  return new Promise((resolve) => {
+    if (window.CONFIG_READY && window.API_BASE_URL) {
+      resolve();
+    } else {
+      const checkConfig = () => {
+        if (window.CONFIG_READY && window.API_BASE_URL) {
+          resolve();
+        } else {
+          setTimeout(checkConfig, 10);
+        }
+      };
+      checkConfig();
+    }
+  });
+}
+
 // Simple API configuration - always use nginx proxy
-const API_BASE = window.API_BASE_URL || '/api';
+let API_BASE = '/api'; // Default fallback
 
 console.log('🎮 Humor Memory Game Frontend Loading...');
-console.log('🔧 API_BASE:', API_BASE);
+console.log('🔧 Waiting for configuration...');
 const CARD_FLIP_DELAY = 1500;
 const MESSAGE_DISPLAY_TIME = 3000;
 
@@ -40,10 +58,23 @@ let gameState = {
 // INITIALIZATION
 // ========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log('🎮 Humor Memory Game Frontend Loading...');
-  console.log('🔧 API_BASE_URL:', window.API_BASE_URL);
-  console.log('🔧 API_BASE:', API_BASE);
+  console.log('🔧 DOMContentLoaded event fired');
+  console.log('🔧 Initial window.API_BASE_URL:', window.API_BASE_URL);
+  console.log('🔧 Initial window.CONFIG_READY:', window.CONFIG_READY);
+  
+  // Wait for configuration to be ready
+  console.log('🔧 Waiting for configuration...');
+  await waitForConfig();
+  console.log('🔧 Configuration wait completed');
+  
+  // Now set the API_BASE from configuration
+  API_BASE = window.API_BASE_URL;
+  
+  console.log('🔧 Configuration loaded successfully');
+  console.log('🔧 Final API_BASE_URL:', window.API_BASE_URL);
+  console.log('🔧 Final API_BASE:', API_BASE);
 
   // Check API connectivity
   checkAPIConnection()
@@ -62,8 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function checkAPIConnection() {
   try {
-    // API_BASE already includes /api, so we don't need to add it again
-    const response = await fetch(`${API_BASE}`, {
+    // Call the health endpoint to test API connectivity
+    const response = await fetch(`${API_BASE}/health`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -73,7 +104,7 @@ async function checkAPIConnection() {
     }
 
     const result = await response.json();
-    console.log('✅ API connection successful:', result.message);
+    console.log('✅ API connection successful:', result.status);
     return true;
   } catch (error) {
     console.error('❌ API connection failed:', error);

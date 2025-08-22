@@ -170,9 +170,40 @@ app.get('/api', (req, res) => {
         'GET /api/leaderboard/fresh': 'Get fresh leaderboard data',
       },
     },
-    health: '/health',
+    health: '/api/health',
     documentation: 'API-only backend for separated architecture! 🎯',
   });
+});
+
+// API health endpoint (for nginx proxy)
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connection
+    const dbCheck = await database.query('SELECT 1 as healthy');
+
+    // Check Redis connection
+    const redisCheck = await redisClient.ping();
+
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: {
+        database: dbCheck.rows[0].healthy === 1 ? 'connected' : 'error',
+        redis: redisCheck === 'PONG' ? 'connected' : 'error',
+        api: 'running',
+      },
+      version: process.env.npm_package_version || '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+    });
+  } catch (error) {
+    console.error('API health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: 'Service unavailable',
+      message: 'The game API is taking a short break! 🎮💤',
+    });
+  }
 });
 
 // Import and mount API routes (moved after other middleware to avoid conflicts)
@@ -211,13 +242,14 @@ app.use('/api/*', (req, res) => {
 });
 
 // Handle non-API routes (since this is API-only)
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'API Server Only',
-    message: 'This is an API-only server. Frontend is served separately! 🎮',
-    suggestion: 'Access the game at your frontend URL',
-  });
-});
+// REMOVED: This was causing frontend requests to be intercepted by backend
+// app.use('*', (req, res) => {
+//   res.status(404).json({
+//     error: 'API Server Only',
+//     message: 'This is an API-only server. Frontend is served separately! 🎮',
+//     suggestion: 'Access the game at your frontend URL',
+//   });
+// });
 
 // Global error handler
 app.use((err, req, res, next) => {
