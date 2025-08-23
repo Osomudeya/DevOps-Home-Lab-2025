@@ -18,6 +18,20 @@ data:
       - /etc/prometheus/rules/*.yml
     
     scrape_configs:
+      # Static targets for humor-game services
+      - job_name: 'humor-game-backend'
+        static_configs:
+          - targets: ['backend.humor-game.svc.cluster.local:3001']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+      
+      - job_name: 'humor-game-frontend'
+        static_configs:
+          - targets: ['frontend.humor-game.svc.cluster.local:80']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+      
+      # Kubernetes service discovery (for other services)
       - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:
           - role: pod
@@ -43,6 +57,25 @@ data:
             action: replace
             target_label: kubernetes_pod_name
       
+      # Kubelet metrics for container CPU and memory
+      - job_name: 'kubelet'
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+      
       - job_name: 'kubernetes-service-endpoints'
         kubernetes_sd_configs:
           - role: endpoints
@@ -63,10 +96,94 @@ data:
             regex: __meta_kubernetes_service_label_(.+)
           - source_labels: [__meta_kubernetes_namespace]
             action: replace
-            target_label: kubernetes_namespace
-          - source_labels: [__meta_kubernetes_service_name]
-            action: replace
             target_label: kubernetes_service_name
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  humor-game-alerts.yml: |
+    groups:
+      - name: humor-game-production
+        rules:
+          # High Error Rate Alert
+          - alert: HighErrorRate
+            expr: rate(http_errors_total{job="kubernetes-pods"}[5m]) > 0.1
+            for: 2m
+            labels:
+              severity: warning
+              service: humor-game
+            annotations:
+              summary: "High error rate detected"
+              description: "Error rate is {{ $value }} errors/sec for the last 5 minutes"
+          
+          # High Response Time Alert
+          - alert: HighResponseTime
+            expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="kubernetes-pods"}[5m])) > 2
+            for: 2m
+            labels:
+              severity: warning
+              service: humor-game
+            annotations:
+              summary: "High response time detected"
+              description: "95th percentile response time is {{ $value }}s"
+          
+          # Database Connection Issues
+          - alert: DatabaseConnectionHigh
+            expr: database_connections_current > 80
+            for: 1m
+            labels:
+              severity: warning
+              service: humor-game
+            annotations:
+              summary: "High database connections"
+              description: "Database has {{ $value }} active connections"
+          
+          # Redis Performance Issues
+          - alert: RedisCacheHitRateLow
+            expr: redis_cache_hit_rate < 0.8
+            for: 2m
+            labels:
+              severity: warning
+              service: humor-game
+            annotations:
+              summary: "Low Redis cache hit rate"
+              description: "Cache hit rate is {{ $value | humanizePercentage }}"
+          
+          # Application Health Check
+          - alert: ApplicationUnhealthy
+            expr: app_health_status == 0
+            for: 1m
+            labels:
+              severity: critical
+              service: humor-game
+            annotations:
+              summary: "Application is unhealthy"
+              description: "Service {{ $labels.service }} component {{ $labels.component }} is down"
+          
+          # High Memory Usage
+          - alert: HighMemoryUsage
+            expr: app_memory_usage_bytes / 1024 / 1024 / 1024 > 1
+            for: 2m
+            labels:
+              severity: warning
+              service: humor-game
+            annotations:
+              summary: "High memory usage"
+              description: "Component {{ $labels.component }} using {{ $value }}GB of memory"
+          
+          # Game Performance Issues
+          - alert: LowGameAccuracy
+            expr: game_accuracy_rate < 0.7
+            for: 5m
+            labels:
+              severity: warning
+              service: humor-game
+            annotations:
+              summary: "Low game accuracy detected"
+              description: "Game accuracy for {{ $labels.difficulty }} is {{ $value | humanizePercentage }}"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -92,6 +209,8 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/prometheus
+            - name: rules
+              mountPath: /etc/prometheus/rules
             - name: storage
               mountPath: /prometheus
           args:
@@ -112,6 +231,9 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-rules
         - name: storage
           persistentVolumeClaim:
             claimName: prometheus-pvc
@@ -250,33 +372,265 @@ data:
     {
       "dashboard": {
         "id": null,
-        "title": "Humor Memory Game",
-        "tags": ["game", "memory"],
+        "title": "Humor Memory Game - Production Dashboard",
+        "tags": ["game", "memory", "humor-game", "production"],
         "timezone": "browser",
         "panels": [
           {
             "id": 1,
-            "title": "Game Requests",
-            "type": "graph",
+            "title": "Application Health Overview",
+            "type": "stat",
             "targets": [
               {
-                "expr": "rate(http_requests_total{job=\"backend\"}[5m])",
-                "legendFormat": "{{method}} {{route}}"
+                "expr": "app_health_status",
+                "legendFormat": "{{service}} - {{component}}"
               }
-            ]
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "thresholds"},
+                "thresholds": {
+                  "steps": [
+                    {"color": "red", "value": 0},
+                    {"color": "green", "value": 1}
+                  ]
+                },
+                "unit": "short"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
           },
           {
             "id": 2,
-            "title": "Database Connections",
+            "title": "HTTP Request Rate (req/sec)",
             "type": "graph",
             "targets": [
               {
-                "expr": "pg_stat_database_numbackends",
-                "legendFormat": "{{datname}}"
+                "expr": "rate(http_requests_total{job=\"kubernetes-pods\"}[5m])",
+                "legendFormat": "{{method}} {{route}} - {{endpoint_type}}"
               }
-            ]
+            ],
+            "yAxes": [{"label": "Requests per second", "unit": "reqps"}],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "HTTP Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_errors_total{job=\"kubernetes-pods\"}[5m])",
+                "legendFormat": "{{method}} {{route}} - {{error_type}}"
+              }
+            ],
+            "yAxes": [{"label": "Errors per second", "unit": "reqps"}],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Response Time (95th percentile)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"kubernetes-pods\"}[5m]))",
+                "legendFormat": "{{method}} {{route}}"
+              }
+            ],
+            "yAxes": [{"label": "Response Time", "unit": "s"}],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          },
+          {
+            "id": 5,
+            "title": "Game Performance Metrics",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "game_scores_total",
+                "legendFormat": "{{difficulty}} - {{score_range}}"
+              },
+              {
+                "expr": "active_games_current",
+                "legendFormat": "{{difficulty}} - {{status}}"
+              },
+              {
+                "expr": "game_accuracy_rate",
+                "legendFormat": "{{difficulty}} Accuracy"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "palette-classic"},
+                "unit": "short"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+          },
+          {
+            "id": 6,
+            "title": "User Engagement",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "unique_users_total",
+                "legendFormat": "{{user_type}} Users"
+              },
+              {
+                "expr": "rate(user_session_duration_seconds_count[5m])",
+                "legendFormat": "Active Sessions"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "palette-classic"},
+                "unit": "short"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+          },
+          {
+            "id": 7,
+            "title": "Database Performance",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "database_connections_current",
+                "legendFormat": "{{connection_type}} Connections"
+              },
+              {
+                "expr": "rate(database_query_duration_seconds_count[5m])",
+                "legendFormat": "Queries/sec"
+              },
+              {
+                "expr": "histogram_quantile(0.95, rate(database_query_duration_seconds_bucket[5m]))",
+                "legendFormat": "95th % Query Time"
+              }
+            ],
+            "yAxes": [{"label": "Value", "unit": "short"}],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+          },
+          {
+            "id": 8,
+            "title": "Redis Performance",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "redis_connections_current",
+                "legendFormat": "{{connection_type}} Connections"
+              },
+              {
+                "expr": "rate(redis_operation_duration_seconds_count[5m])",
+                "legendFormat": "Operations/sec"
+              },
+              {
+                "expr": "redis_cache_hit_rate",
+                "legendFormat": "{{cache_type}} Hit Rate"
+              }
+            ],
+            "yAxes": [{"label": "Value", "unit": "short"}],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+          },
+          {
+            "id": 9,
+            "title": "System Resource Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "app_memory_usage_bytes",
+                "legendFormat": "{{component}} Memory"
+              },
+              {
+                "expr": "app_cpu_usage_percent",
+                "legendFormat": "{{component}} CPU"
+              }
+            ],
+            "yAxes": [{"label": "Usage", "unit": "short"}],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+          },
+          {
+            "id": 10,
+            "title": "Application Uptime",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "app_uptime_seconds_total",
+                "legendFormat": "Total Uptime"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "palette-classic"},
+                "unit": "s"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+          },
+          {
+            "id": 11,
+            "title": "Error Rate Thresholds",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "error_rate_threshold",
+                "legendFormat": "{{service}} - {{threshold_type}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "thresholds"},
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": 0},
+                    {"color": "yellow", "value": 0.05},
+                    {"color": "red", "value": 0.1}
+                  ]
+                },
+                "unit": "percentunit"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40}
+          },
+          {
+            "id": 12,
+            "title": "Response Time Thresholds",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "response_time_threshold_seconds",
+                "legendFormat": "{{service}} - {{threshold_type}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "thresholds"},
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": 0},
+                    {"color": "yellow", "value": 1},
+                    {"color": "red", "value": 5}
+                  ]
+                },
+                "unit": "s"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
           }
-        ]
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s",
+        "annotations": {
+          "list": [
+            {
+              "name": "Deployments",
+              "type": "dashboard",
+              "datasource": "-- Grafana --",
+              "enable": true,
+              "iconColor": "rgba(0, 211, 255, 1)"
+            }
+          ]
+        }
       }
     }
 ---

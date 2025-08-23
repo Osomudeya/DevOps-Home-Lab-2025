@@ -3,8 +3,34 @@
 
 const redis = require('redis');
 
+// Build Redis connection URL properly for both Docker Compose and Kubernetes
+function buildRedisUrl() {
+  // In Kubernetes, REDIS_PORT might be set to tcp://host:port
+  // In Docker Compose, REDIS_PORT is usually just the port number
+  let host = process.env.REDIS_HOST || 'redis';
+  let port = process.env.REDIS_PORT || 6379;
+  const db = process.env.REDIS_DB || 0;
+  const password = process.env.REDIS_PASSWORD;
+  
+  // Handle Kubernetes-style REDIS_PORT (tcp://host:port)
+  if (typeof port === 'string' && port.startsWith('tcp://')) {
+    const urlParts = port.split('://')[1].split(':');
+    host = urlParts[0];
+    port = parseInt(urlParts[1]);
+  }
+  
+  // Ensure port is a number
+  port = parseInt(port) || 6379;
+  
+  if (password) {
+    return `redis://:${password}@${host}:${port}/${db}`;
+  } else {
+    return `redis://${host}:${port}/${db}`;
+  }
+}
+
 const client = redis.createClient({
-  url: `redis://${process.env.REDIS_PASSWORD ? ':' + process.env.REDIS_PASSWORD + '@' : ''}${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}/${process.env.REDIS_DB || 0}`,
+  url: buildRedisUrl(),
   socket: {
     family: 4, // Force IPv4
     connectTimeout: 10000,

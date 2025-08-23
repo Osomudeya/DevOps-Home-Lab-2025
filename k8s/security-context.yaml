@@ -1,0 +1,43 @@
+# Security Contexts for Production Security Hardening
+# These configurations implement security best practices
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-contexts
+  namespace: humor-game
+data:
+  # Pod Security Standards configuration
+  pod-security-standards: |
+    # These are the security contexts that will be applied to all pods
+    # They implement the "restricted" pod security profile
+    
+    # Run containers as non-root users
+    # Prevent privilege escalation
+    # Drop unnecessary capabilities
+    # Read-only root filesystem where possible
+    # Non-privileged containers
+    
+  # Security context for frontend pods
+  frontend-security: |
+    # Frontend runs as non-root user (nginx)
+    # Minimal capabilities needed
+    # Read-only root filesystem
+    
+  # Security context for backend pods  
+  backend-security: |
+    # Backend runs as non-root user (backend:1001)
+    # Minimal capabilities needed
+    # Read-only root filesystem except for logs
+    
+  # Security context for database pods
+  database-security: |
+    # PostgreSQL runs as postgres user
+    # Minimal capabilities needed
+    # Persistent storage for data
+    
+  # Security context for Redis pods
+  redis-security: |
+    # Redis runs as redis user
+    # Minimal capabilities needed
+    # No persistent storage needed

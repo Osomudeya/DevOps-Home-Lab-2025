@@ -16,6 +16,7 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          imagePullPolicy: Always
           command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$REDIS_PASSWORD\""]
           env:
             - name: REDIS_PASSWORD
@@ -27,11 +28,11 @@ spec:
             - containerPort: 6379
           resources:
             requests:
-              memory: "32Mi"
-              cpu: "25m"
-            limits:
               memory: "64Mi"
-              cpu: "50m"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
 ---
 apiVersion: v1
 kind: Service

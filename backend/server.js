@@ -12,6 +12,7 @@ const rateLimit = require('express-rate-limit');
 // Import custom modules
 const database = require('./models/database');
 const redisClient = require('./utils/redis');
+const { metricsMiddleware, metricsEndpoint, updateGameMetrics } = require('./middleware/metrics');
 
 // Create Express application
 const app = express();
@@ -76,6 +77,9 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Prometheus metrics middleware (must be before routes)
+app.use(metricsMiddleware);
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -118,32 +122,11 @@ app.get('/health', async (req, res) => {
 // PROMETHEUS METRICS ENDPOINT
 // ========================================
 
-// Simple metrics for Prometheus
-let requestCount = 0;
-let activeGames = 0;
+// Metrics are now handled by the Prometheus middleware
 
-app.get('/metrics', (req, res) => {
-  res.set('Content-Type', 'text/plain');
-  res.send(`
-# HELP http_requests_total Total number of HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",route="/metrics"} ${requestCount}
+app.get('/metrics', metricsEndpoint);
 
-# HELP humor_game_active_games Current number of active games
-# TYPE humor_game_active_games gauge
-humor_game_active_games ${activeGames}
-
-# HELP up Service health status
-# TYPE up gauge
-up 1
-`);
-});
-
-// Increment request counter for all requests
-app.use((req, res, next) => {
-  requestCount++;
-  next();
-});
+// Metrics are now handled by the Prometheus middleware
 
 // ========================================
 // API ROUTES

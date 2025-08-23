@@ -12,10 +12,15 @@ spec:
     metadata:
       labels:
         app: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: backend
-          image: k3d-k3d-registry:5000/humor-game/backend:v1.0.2
+          image: humor-game-backend:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 3001
           env:
@@ -78,11 +83,11 @@ spec:
                   key: API_BASE_URL
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
-            limits:
               memory: "128Mi"
               cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
           livenessProbe:
             httpGet:
               path: /health

@@ -95,7 +95,7 @@ APPEND‑ONLY DOCS GUARANTEE:
 
 FINAL REMINDER:
 If any instruction here conflicts with a user chat message, prefer **this role file** unless I explicitly override with:  
-`OVERRIDE ROLE: <my instruction>`
+`OVERRIDE ROLE: <Go>`
 
 
 

@@ -51,6 +51,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 0
     container_name: humor-game-backend
     restart: unless-stopped
     environment:
@@ -96,6 +98,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 0
     container_name: humor-game-frontend
     restart: unless-stopped
     environment:

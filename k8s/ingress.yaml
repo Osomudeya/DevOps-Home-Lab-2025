@@ -4,26 +4,25 @@ metadata:
   name: humor-game-ingress
   namespace: humor-game
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
 spec:
-  ingressClassName: nginx
+  ingressClassName: humor-game-nginx
   rules:
     - host: gameapp.local  # For local development
       http:
         paths:
-          # API routes - strip /api prefix and forward to backend
-          - path: /api(/|$)(.*)
-            pathType: ImplementationSpecific
+          # API routes - forward to backend
+          - path: /api
+            pathType: Prefix
             backend:
               service:
                 name: backend
                 port:
                   number: 3001
-          # Frontend routes - serve everything else from frontend
+          # Everything else - serve from frontend
           - path: /
             pathType: Prefix
             backend:
@@ -34,13 +33,15 @@ spec:
     - host: gameapp.games  # For production
       http:
         paths:
-          - path: /api(/|$)(.*)
-            pathType: ImplementationSpecific
+          # API routes - forward to backend
+          - path: /api
+            pathType: Prefix
             backend:
               service:
                 name: backend
                 port:
                   number: 3001
+          # Everything else - serve from frontend
           - path: /
             pathType: Prefix
             backend:

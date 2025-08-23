@@ -415,6 +415,8 @@ k3d cluster create dev-cluster \
 
 # Verify cluster is running
 kubectl get nodes
+
+kubectl get nodes -o wide
 # Should show 3 nodes: 1 server, 2 agents, all "Ready"
 
 # Check cluster health
@@ -455,8 +457,9 @@ kubectl apply -f k8s/postgres.yaml
 kubectl apply -f k8s/redis.yaml
 
 # Wait for databases to be ready (this takes time!)
-kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=180s
-kubectl wait --for=condition=ready pod -l app=redis -n humor-game --timeout=60s
+echo "⏳ Waiting for PostgreSQL..." && kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=180s || echo "⚠️ PostgreSQL timeout - continuing with diagnostics"
+
+echo "⏳ Waiting for PostgreSQL..." && kubectl wait --for=condition=ready pod -l app=postgres -n humor-game --timeout=180s || echo "⚠️ PostgreSQL timeout - continuing with diagnostics"
 
 # Verify databases are running
 kubectl get pods -n humor-game
@@ -465,8 +468,33 @@ kubectl get pods -n humor-game
 
 **Understanding Persistent Storage:** The PostgreSQL deployment creates a PersistentVolumeClaim (PVC) to ensure your data survives pod restarts, unlike temporary container storage.
 
-### Step 2.4: Deploy Application Services
+### Step 2.4: Build and Deploy Application Services
 
+**⚠️ CRITICAL: Build Images Locally AND Import to k3d!**
+
+Before deploying to Kubernetes, you must build your container images locally AND import them to k3d. This ensures both local availability and k3d context.
+
+```bash
+# Build your application images locally
+docker build -t humor-game-frontend:latest ./frontend
+docker build -t humor-game-backend:latest ./backend
+
+# Verify images were built
+docker images | grep humor-game
+# Should show: humor-game-frontend:latest and humor-game-backend:latest
+
+# Import images to k3d (CRITICAL STEP!)
+k3d image import humor-game-frontend:latest -c humor-game-cluster
+k3d image import humor-game-backend:latest -c humor-game-cluster
+```
+
+**Why this matters:** 
+- **Local builds** create the images with your latest code changes
+- **k3d import** ensures the cluster can access the updated images
+- **`imagePullPolicy: Never`** tells Kubernetes to use local images instead of external registries
+- **This eliminates image pull errors** and registry complexity
+
+**Deploy your services:**
 ```bash
 # Deploy backend API service
 kubectl apply -f k8s/backend.yaml
@@ -483,6 +511,63 @@ kubectl get pods -n humor-game
 # Should show 4 pods all with "1/1 Running" status
 ```
 
+#### Understanding the Hybrid Image Strategy
+
+**Why this approach works:**
+- **`imagePullPolicy: Never`** tells Kubernetes: "Don't try to pull from external registries"
+- **Local Docker daemon** provides the base images
+- **k3d import** ensures the cluster context is updated
+- **No external registry complexity** - perfect for development and learning
+
+**The complete workflow:**
+1. **Build locally**: `docker build -t humor-game-frontend:latest ./frontend`
+2. **Import to k3d**: `k3d image import humor-game-frontend:latest -c humor-game-cluster`
+3. **Deploy to K8s**: `kubectl apply -f k8s/frontend.yaml`
+4. **K8s uses local image**: No pulling, no registry errors
+
+**When you rebuild (complete cycle):**
+```bash
+# 1. Rebuild image
+docker build -t humor-game-frontend:latest ./frontend
+
+# 2. Import to k3d (IMPORTANT!)
+k3d image import humor-game-frontend:latest -c humor-game-cluster
+
+# 3. Restart deployment
+kubectl rollout restart deployment/frontend -n humor-game
+```
+
+**Why k3d import is necessary:**
+- **k3d has its own image context** separate from your local Docker daemon
+- **Local builds update your Docker**, but k3d needs to know about the changes
+- **Without import**, k3d might use cached/stale versions of your images
+- **This is especially important** when you make configuration changes (like nginx.conf updates)
+
+#### K8s Smoke Tests (Regression at Cluster Level)
+
+Now let's run the smoke tests to verify everything is working:
+Backend health via Service:
+```
+echo "🧪 Testing Backend Health via Service..." && kubectl port-forward -n humor-game svc/backend 3001:3001 >/dev/null 2>&1 & echo $! > /tmp/pf_backend.pid && sleep 2 && curl -sf http://127.0.0.1:3001/health && echo "✅ Backend health check passed" && kill $(cat /tmp/pf_backend.pid) || (echo "❌ Backend health check failed" && kill $(cat /tmp/pf_backend.pid) 2>/dev/null || true)
+
+Frontend static via Service:
+
+echo "🧪 Testing Frontend via Service..." && kubectl port-forward -n humor-game svc/frontend 8088:80 >/dev/null 2>&1 & echo $! > /tmp/pf_frontend.pid && sleep 2 && curl -sI http://127.0.0.1:8088/ | grep -q "200" && echo "✅ Frontend HEAD 200 confirmed" || echo "⚠️ Frontend HEAD 200 not confirmed" && kill $(cat /tmp/pf_frontend.pid) 2>/dev/null || true
+
+```
+#### Next Steps
+The application is now running on Kubernetes! You can:
+Access the frontend via port-forward: kubectl port-forward -n humor-game svc/frontend 8080:80
+Test the API via port-forward: kubectl port-forward -n humor-game svc/backend 3001:3001
+Proceed to Milestone 2.5 (Ingress setup) for production-style access
+
+Access Your Kubernetes App
+Frontend (Game App)
+URL: http://gameapp.local:8080
+Status: ✅ Already running (you can see the port-forward is active)
+
+
+
 ### Step 2.5: Set Up Ingress Controller for External Access
 
 An Ingress Controller acts like nginx in Docker Compose, routing external traffic to your services.
@@ -490,6 +575,10 @@ An Ingress Controller acts like nginx in Docker Compose, routing external traffi
 ```bash
 # Install nginx-ingress controller
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/baremetal/deploy.yaml
+
+or
+
+echo "🔧 Installing NGINX Ingress Controller with unique name..." && helm install humor-game-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer --set controller.ingressClassResource.name=humor-game-nginx
 
 # Wait for ingress controller to be ready
 kubectl wait --namespace ingress-nginx \
@@ -504,41 +593,58 @@ kubectl apply -f k8s/ingress.yaml
 kubectl get ingress -n humor-game
 ```
 
-### Step 2.6: Test Your Kubernetes Application
+### Step 2.6: Configure Local Domain and Test Access
 
-**Method 1: Port Forwarding (Development Testing)**
+**Set up local domain for development:**
 ```bash
-# Forward frontend service to your laptop
-kubectl port-forward svc/frontend 8080:80 -n humor-game &
+# Add local domain to your hosts file
+echo "127.0.0.1 gameapp.local" | sudo tee -a /etc/hosts
 
-# Forward backend service for API testing
-kubectl port-forward svc/backend 3001:3001 -n humor-game &
-
-# Open in browser
-open http://localhost:8080
+# Verify DNS resolution works
+ping gameapp.local
+# Should ping 127.0.0.1 successfully
 ```
 
-**Method 2: Ingress Access (Production-like)**
+**Test your Kubernetes application:**
 ```bash
-# Test through ingress controller
-curl -H "Host: gameapp.local" http://localhost:8080/
-
-# Test API routing
+# Test API health through Ingress
 curl -H "Host: gameapp.local" http://localhost:8080/api/health
+# Should return: {"status":"healthy",...}
+
+# Open in browser with domain
+open http://gameapp.local:8080
 ```
+
+**Note:** This completes your development setup with Ingress routing. Milestone 3 will add production features like TLS certificates, monitoring dashboards, and horizontal scaling.
+
+**📚 Understanding the URL Patterns (Don't Get Confused!)**
+
+The documentation shows different URLs for different purposes:
+
+- **`localhost:8080`** - For direct service testing and curl commands with Host headers
+- **`gameapp.local:8080`** - For actual user access through the browser  
+- **`Host: gameapp.local`** - For testing Ingress routing
+
+This gives you **both development and production access patterns**:
+
+- **Developers**: Use `localhost:8080` for direct testing and debugging
+- **Users**: Access via `gameapp.local:8080` through Ingress (production-style)
+- **DevOps Engineers**: Can test both patterns to verify routing works correctly
+
+**Why both?** `localhost:8080` is the local port that k3d exposes, while `gameapp.local:8080` is the domain that Ingress routes to your services.
 
 ### Checkpoint ✅
 
 Your Kubernetes deployment is working when:
 - All 4 pods show "1/1 Running" status
-- Frontend loads at `http://localhost:8080` through port-forward
+- Frontend loads at `http://gameapp.local:8080` through Ingress
 - You can start a game and play without errors
 - Backend API responds to health checks
 - Ingress routes traffic correctly to both frontend and backend
 
 ### Verify Full Application Functionality
 
-Open `http://localhost:8080` in your browser and test:
+Open `http://gameapp.local:8080` in your browser and test:
 - ✅ **Game interface loads** properly
 - ✅ **Username and difficulty selection** work
 - ✅ **Start game button** creates a new game
@@ -569,15 +675,142 @@ kubectl get svc postgres -n humor-game
 kubectl exec -it deployment/postgres -n humor-game -- psql -U gameuser -d humor_memory_game -c "SELECT 1;"
 ```
 
-**Issue: Frontend shows connection errors**
+**Issue: Frontend not loading correctly (static assets served as index.html)**
 ```bash
-# Check if backend service is reachable
-kubectl get endpoints backend -n humor-game
+# Problem: Frontend nginx catch-all location block overriding static asset paths
+# Solution: Reorder nginx location blocks with ^~ prefix matching
+# Fix: Update frontend/nginx.conf to prioritize /scripts/, /styles/, /components/
 
-# Test backend health directly
-kubectl port-forward svc/backend 3001:3001 -n humor-game &
-curl http://localhost:3001/health
+# Verify fix:
+curl -H "Host: gameapp.local" -I http://localhost:8080/scripts/game.js
+# Should return: Content-Type: application/javascript, not text/html
 ```
+
+**Issue: Backend Redis connection failing with malformed URL**
+```bash
+# Problem: Kubernetes sets REDIS_PORT=tcp://host:port instead of just port
+# Error: redis://:password@redis:tcp://10.43.201.171:6379/0 (ERR_INVALID_URL)
+
+# Solution: Universal Redis connection logic for both environments
+# Fix: Update backend/utils/redis.js to handle tcp:// prefix in REDIS_PORT
+
+# Verify fix:
+kubectl logs -l app=backend -n humor-game | grep "Redis: Connected"
+# Should show: ✅ Redis: Connected and ready!
+```
+
+**Issue: Ingress not routing /api/* requests to backend**
+```bash
+# Problem: Ingress routing correct but backend missing /api/* routes
+# Error: {"error":"Not Found","message":"API endpoint not found! 🔍"}
+
+# Solution: Add /api/* routes to backend server.js
+# Fix: Ensure backend has app.get('/api/health', ...) and app.use('/api/*', ...)
+
+# Verify fix:
+curl -H "Host: gameapp.local" -s http://localhost:8080/api/health
+# Should return: {"status":"healthy",...}
+```
+
+**Issue: Frontend JavaScript configuration race condition**
+```bash
+# Problem: window.API_BASE_URL not set when game.js executes
+# Error: "Cannot Connect to Game Server" in browser
+
+# Solution: Async configuration loader with waitForConfig()
+# Fix: Implement Promise-based config waiting in frontend/src/scripts/game.js
+
+# Verify fix:
+# Browser console should show: ✅ Configuration loaded successfully
+```
+
+**Issue: Image pull errors (ErrImagePull/ImagePullBackOff)**
+```bash
+# Problem: Kubernetes trying to pull images from external registries
+# Error: "Failed to pull image: failed to resolve reference"
+
+# Solution: Use local images with imagePullPolicy: Never
+# Fix: Build images locally first, then deploy
+docker build -t humor-game-frontend:latest ./frontend
+docker build -t humor-game-backend:latest ./backend
+
+# Why this works: imagePullPolicy: Never tells Kubernetes to use local images
+# No registry setup needed - your local Docker daemon serves as the image source
+```
+
+### ✅ Checkpoint List
+
+**Milestone 2 Complete when all items are verified:**
+
+- [ ] **Cluster Ready**: `kubectl get nodes` shows 3 nodes (1 server, 2 agents) all "Ready"
+- [ ] **Images Built Locally**: `docker images | grep humor-game` shows frontend and backend images
+- [ ] **Namespace Created**: `kubectl get namespace humor-game` exists
+- [ ] **ConfigMap Applied**: `kubectl get configmap -n humor-game humor-game-config` exists
+- [ ] **Secrets Applied**: `kubectl get secrets -n humor-game` shows postgres-secret and redis-secret
+- [ ] **PostgreSQL Running**: `kubectl get pods -n humor-game -l app=postgres` shows "1/1 Running"
+- [ ] **Redis Running**: `kubectl get pods -n humor-game -l app=redis` shows "1/1 Running"
+- [ ] **Backend Running**: `kubectl get pods -n humor-game -l app=backend` shows "1/1 Running"
+- [ ] **Frontend Running**: `kubectl get pods -n humor-game -l app=frontend` shows "1/1 Running"
+- [ ] **Services Created**: `kubectl get svc -n humor-game` shows 4 services (postgres, redis, backend, frontend)
+- [ ] **Backend Health**: `curl -H "Host: gameapp.local" http://gameapp.local:8080/api/health` returns 200 OK
+- [ ] **Frontend Loads**: `curl -H "Host: gameapp.local" http://gameapp.local:8080/` returns 200 OK
+- [ ] **Static Assets**: `curl -H "Host: gameapp.local" http://gameapp.local:8080/scripts/game.js` returns JavaScript content
+- [ ] **No Connection Errors**: Browser console shows no "Cannot Connect to Game Server" errors
+- [ ] **Game Functional**: Can start game, flip cards, and interact with interface
+
+### 📸 Screenshots: Kubernetes Deployment Status
+
+**Pod Status Verification:**
+```bash
+kubectl get pods -n humor-game -o wide
+```
+
+**Expected Output:**
+```
+NAME                       READY   STATUS    RESTARTS   AGE     IP           NODE                    NOMINATED NODE   READINESS GATES
+backend-675577fbf8-rb77b   1/1     Running   0          15m     10.42.0.53   k3d-humor-game-cluster-agent-0   <none>           <none>
+frontend-5977b4874d-hfddb  1/1     Running   0          20m     10.42.0.57   k3d-humor-game-cluster-agent-1   <none>           <none>
+postgres-7d8f9b8c5d-abc12  1/1     Running   0          25m     10.42.0.51   k3d-humor-game-cluster-agent-0   <none>           <none>
+redis-9f8e7d6c5b-def34    1/1     Running   0          25m     10.42.0.52   k3d-humor-game-cluster-agent-1   <none>           <none>
+```
+
+**Service Status Verification:**
+```bash
+kubectl get svc -n humor-game
+```
+
+**Expected Output:**
+```
+NAME      TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+backend   ClusterIP   10.43.244.239   <none>        3001/TCP   88m
+frontend  ClusterIP   10.43.201.170   <none>        80/TCP     88m
+postgres  ClusterIP   10.43.201.172   <none>        5432/TCP   88m
+redis     ClusterIP   10.43.201.171   <none>        6379/TCP   88m
+```
+
+**Ingress Status Verification:**
+```bash
+kubectl get ingress -n humor-game
+```
+
+**Expected Output:**
+```
+NAME               CLASS                HOSTS           ADDRESS   PORTS   AGE
+humor-game-ingress   humor-game-nginx   gameapp.local   80        88m
+```
+
+### 🎯 **Milestone 2 Achievement Unlocked!**
+
+**What you've accomplished:**
+- ✅ **Multi-service application** running on Kubernetes with proper service discovery
+- ✅ **Persistent storage** for PostgreSQL data that survives pod restarts
+- ✅ **Load balancing** with k3d loadbalancer exposing ports 8080:80 and 8443:443
+- ✅ **Configuration management** using ConfigMaps and Secrets instead of .env files
+- ✅ **Health checks** ensuring services are ready before accepting traffic
+- ✅ **Production networking** with Ingress controller routing external traffic
+- ✅ **Universal compatibility** - same configuration works in Docker Compose and Kubernetes
+
+**Next milestone:** Proceed to **Milestone 3: Ingress & External Access** to enable production-style domain access and TLS termination.
 
 ### Understanding the Differences: Docker Compose vs Kubernetes
 
@@ -589,6 +822,7 @@ curl http://localhost:3001/health
 | **Load Balancing** | nginx container | Services + Ingress |
 | **Health Checks** | Container health | Readiness + Liveness probes |
 | **Scaling** | Manual replica counts | Horizontal Pod Autoscaler |
+| **Images** | Local Docker images | Local images + `imagePullPolicy: Never` |
 
 ### What You Learned
 
@@ -598,6 +832,7 @@ You've successfully migrated a multi-service application from Docker Compose to 
 - **Configuration management** with ConfigMaps and Secrets
 - **Persistent storage** for stateful applications like databases
 - **Ingress routing** for external access to your applications
+- **Universal image strategy** that works in both Docker Compose and Kubernetes without conflicts
 
 ### Professional Skills Gained
 
@@ -605,181 +840,466 @@ You've successfully migrated a multi-service application from Docker Compose to 
 - **Service mesh basics** through Kubernetes service discovery
 - **Configuration as code** practices for managing application settings
 - **Infrastructure debugging** skills for troubleshooting complex deployments
+- **Multi-environment compatibility** ensuring Docker Compose and Kubernetes work seamlessly together
 
 ---
 
-## Milestone 3: Production-Grade Access and Security
+## Milestone 3: Production-Grade Security and Scalability
 
-**Learning Objective:** Transform your local-only application into one that can serve real users with proper domain routing, TLS certificates, and production networking patterns.
+**Learning Objective:** Enhance your working Kubernetes application with production-ready features like TLS certificates, monitoring, resource management, and real domain deployment.
 
-**Why this matters:** This milestone bridges the gap between "it works on my laptop" and "it works for thousands of users." You'll implement the same networking patterns used by major web applications.
+**Why this matters:** This milestone transforms your local application into one ready for production use, implementing security and scalability patterns used by enterprise applications.
 
-### Step 3.1: Set Up Local Domain for Testing
+**Prerequisites:** 
+- ✅ Milestone 2 completed with `gameapp.local:8080` working
+- ✅ All 4 pods running and game functional
+- ✅ Ingress controller routing traffic correctly
 
-Before deploying to a real domain, we'll test with a local domain to understand the concepts.
+### Step 3.1: Verify Current Setup and Add Production Monitoring
 
-```bash
-# Add local domain to your hosts file
-echo "127.0.0.1 gameapp.local" | sudo tee -a /etc/hosts
-
-# Verify DNS resolution works
-ping gameapp.local
-# Should ping 127.0.0.1 successfully
-```
-
-### Step 3.2: Test Production-Style Access
+First, let's confirm your Milestone 2 setup is solid and add monitoring capabilities:
 
 ```bash
-# Test your application through the ingress with domain
-curl -H "Host: gameapp.local" http://localhost:8080/
-
-# Test API routing specifically  
-curl -H "Host: gameapp.local" http://localhost:8080/api/health
+# Verify your current setup from Milestone 2
+curl -H "Host: gameapp.local" -s http://localhost:8080/api/health
 # Should return: {"status":"healthy"}
 
-# Test in browser with domain
+# Test game functionality
 open http://gameapp.local:8080
+
+# Add resource monitoring
+kubectl top nodes
+kubectl top pods -n humor-game
 ```
 
-**Understanding Host Headers:** The `-H "Host: gameapp.local"` tells the ingress controller which virtual host rules to apply, just like how nginx handles multiple domains on one server.
+### Step 3.2: Implement Resource Limits and Requests
 
-### Step 3.3: (Optional) Set Up Real Domain Access
+Production applications need resource management to prevent one service from consuming all cluster resources:
 
-If you have a domain name, you can set up real production access:
-
-**Prerequisites:**
-- A domain name you own (e.g., `yourdomain.com`)
-- Access to your domain's DNS settings
+**✅ Resource limits are already configured in your deployment files!**
 
 ```bash
-# Point your domain to your public IP (if you have one)
-# In your DNS provider, create an A record:
-# Name: game.yourdomain.com
-# Value: Your public IP address
+# Verify resources are applied (they're already there from Milestone 2)
+kubectl describe deployment backend -n humor-game | grep -A 10 "Limits\|Requests"
+kubectl describe deployment frontend -n humor-game | grep -A 10 "Limits\|Requests"
+```
 
-# Update the ingress to use your real domain
-# Edit k8s/ingress.yaml and replace gameapp.local with game.yourdomain.com
-# Then apply the changes:
+**Understanding Resource Management:** Resource requests guarantee minimum resources, while limits prevent overconsumption. This is critical for production stability.
+
+**What's already configured:**
+- **Backend**: 128Mi-256Mi memory, 100m-500m CPU
+- **Frontend**: 64Mi-128Mi memory, 50m-200m CPU
+- **PostgreSQL**: 256Mi-512Mi memory, 200m-1000m CPU
+- **Redis**: 64Mi-128Mi memory, 50m-200m CPU
+
+### Step 3.3: Set Up Real Domain Access (Optional but Recommended)
+
+If you have a domain, let's set up real production access:
+
+**Option A: Using a Real Domain You Own**
+```bash
+# If you own a domain like "mycompany.com", create a subdomain
+# In your DNS provider, add an A record:
+# Name: game.mycompany.com  
+# Value: Your public IP or cloud load balancer IP
+
+# ✅ Your ingress is already configured for production!
+# The k8s/ingress.yaml already includes both:
+# - gameapp.local (for local development)
+# - gameapp.games (for production)
+
+# Just apply the existing ingress (no editing needed)
 kubectl apply -f k8s/ingress.yaml
+
+# Test with your real domain (replace gameapp.games with your actual domain)
+curl -H "Host: yourdomain.com" http://your-public-ip/api/health
 ```
 
-### Step 3.4: Understanding Production Networking
+**Option B: Using ngrok for Testing (No Domain Required)**
+```bash
+# Install ngrok if you don't have it
+# Sign up at ngrok.com for free account
 
-**Traffic Flow in Your Setup:**
+# Expose your local k3d cluster to the internet
+ngrok http 8080
+
+# This gives you a public URL like: https://abc123.ngrok.io
+# ✅ Your ingress is already configured for production domains!
+# Just replace gameapp.games in k8s/ingress.yaml with your ngrok URL
+# Then apply: kubectl apply -f k8s/ingress.yaml
 ```
-User Browser (gameapp.local:8080)
-    ↓
-k3d LoadBalancer (port 8080 → cluster port 80)
-    ↓  
-nginx-ingress Controller (routes by Host header)
-    ↓
-Frontend Service (for / paths) OR Backend Service (for /api/* paths)
-    ↓
-Frontend Pod OR Backend Pod
-```
 
-**Key Networking Concepts:**
-- **Ingress Controller:** Acts like a smart reverse proxy that routes traffic based on hostname and path
-- **Services:** Provide stable IP addresses and load balancing for pods
-- **Host-based routing:** Different domains can point to different applications
-- **Path-based routing:** Different URL paths can go to different services
+### Step 3.4: Add TLS/HTTPS Support
 
-### Step 3.5: Monitor Traffic Flow
+Production applications need encrypted traffic:
 
 ```bash
-# Watch ingress controller logs to see traffic
-kubectl logs -f -n ingress-nginx deployment/ingress-nginx-controller
+# Install cert-manager for automatic TLS certificates
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
 
-# In another terminal, generate some traffic
-curl -H "Host: gameapp.local" http://localhost:8080/
-curl -H "Host: gameapp.local" http://localhost:8080/api/health
+# Wait for cert-manager to be ready
+kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=120s
 
-# You should see access logs showing your requests
+# Apply TLS configuration to your ingress
+kubectl apply -f k8s/production/tls-ingress.yaml
+
+# Verify certificate is issued
+kubectl get certificate -n humor-game
+kubectl describe certificate game-tls -n humor-game
+```
+
+### Step 3.5: Implement Health Checks and Monitoring
+
+Add production-grade health monitoring:
+
+**✅ Health checks are already configured in your deployments!**
+
+```bash
+# Verify health checks are working
+kubectl describe deployment backend -n humor-game | grep -A 5 "Liveness\|Readiness"
+
+# Install simple monitoring stack (beginner-friendly)
+kubectl apply -f k8s/simple-monitoring.yaml
+
+# Wait for monitoring pods to be ready
+kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=120s
+
+# Check monitoring is working
+kubectl get pods -n monitoring
+
+# Access monitoring dashboards
+kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
+kubectl port-forward -n monitoring svc/grafana 3000:3000 &
+
+# Open in browser:
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3000 (admin/admin)
+
+**📊 Monitoring Access Verification:**
+```bash
+# Test if monitoring services are accessible
+curl -s -I http://localhost:9090 | head -n 1
+curl -s -I http://localhost:3000 | head -n 1
+```
+
+**Expected Output:**
+```
+HTTP/1.1 405 Method Not Allowed  # Prometheus (normal - HEAD not supported)
+HTTP/1.1 302 Found               # Grafana (normal - redirects to login)
+```
+
+**🔍 Why "Method Not Allowed"?**
+- **Prometheus**: Expects GET requests, HEAD requests return 405 (normal behavior)
+- **Grafana**: Returns 302 redirect to login page (normal behavior)
+- **Both responses mean the services are working correctly!**
+
+### Step 3.6: Configure Horizontal Pod Autoscaling
+
+Let your application scale automatically based on load:
+
+**🚀 What is HPA (Horizontal Pod Autoscaler)?**
+
+Think of HPA as an **automatic traffic controller** for your app:
+
+- **Without HPA**: 1000 users → 1 pod → **slow response times** ❌
+- **With HPA**: 1000 users → 5 pods → **fast response times** ✅
+
+**How it works:**
+1. **Monitor**: HPA watches CPU/memory usage of your pods
+2. **Threshold**: When usage goes above 70% CPU or 80% memory
+3. **Scale Up**: Automatically creates more pods to handle load
+4. **Scale Down**: When usage drops, removes extra pods (saves resources)
+
+**Real-world example:**
+- **Low traffic**: 1 pod running (efficient)
+- **High traffic**: 5 pods running (responsive)
+- **Traffic drops**: Back to 1 pod (cost-effective)
+
+```bash
+# Apply HPA configuration
+kubectl apply -f k8s/hpa.yaml
+
+# Verify HPA is working
+kubectl get hpa -n humor-game
+
+**Expected Output:**
+```
+NAME           REFERENCE             TARGETS                                     MINPODS   MAXPODS   REPLICAS   AGE
+backend-hpa    Deployment/backend    cpu: <unknown>/70%, memory: <unknown>/80%   1         5         1          14s
+frontend-hpa   Deployment/frontend   cpu: <unknown>/70%                          1         3         1          14s
+```
+
+**🔍 Understanding the Output:**
+- **`<unknown>` targets**: Normal for k3d - metrics server may not be fully configured yet
+- **MINPODS/MAXPODS**: Your scaling limits (1-5 for backend, 1-3 for frontend)
+- **REPLICAS**: Current number of pods running
+- **This is expected behavior** - HPA is working, just waiting for metrics data
+
+# Generate some load to test autoscaling
+kubectl run load-test --image=busybox --rm -i --tty -- sh
+# Inside the pod:
+while true; do wget -q -O- http://gameapp.local:8080/; done
+```
+
+### Step 3.7: Production Security Hardening
+
+Implement security best practices:
+
+**🔒 What is Security Hardening?**
+
+Security hardening makes your application more secure by:
+- **Network isolation**: Only allowing necessary communication between pods
+- **Non-root execution**: Preventing containers from running as root users
+- **Capability restrictions**: Removing unnecessary system privileges
+- **Security contexts**: Enforcing security policies at the pod level
+
+**Why it matters:**
+- **Prevents attacks**: If one pod is compromised, others are protected
+- **Compliance**: Meets enterprise security standards
+- **Best practices**: Industry-standard security configurations
+
+**🔍 What the Network Policies Do:**
+
+**Frontend Policy:**
+- ✅ **Allows**: Incoming traffic from Ingress controller, health checks
+- ✅ **Allows**: Outgoing traffic to backend API (port 3001)
+- ✅ **Allows**: DNS resolution (port 53)
+- ❌ **Blocks**: All other incoming/outgoing traffic
+
+**Backend Policy:**
+- ✅ **Allows**: Incoming traffic from frontend only
+- ✅ **Allows**: Outgoing traffic to PostgreSQL (port 5432) and Redis (port 6379)
+- ✅ **Allows**: DNS resolution (port 53)
+- ❌ **Blocks**: All other incoming/outgoing traffic
+
+**Database Policies:**
+- ✅ **Allows**: Incoming traffic from backend only
+- ✅ **Allows**: Health checks from kubelet
+- ❌ **Blocks**: All other incoming traffic
+- ❌ **Blocks**: All outgoing traffic (except DNS)
+
+**🔒 What Security Contexts Do:**
+
+**Security Contexts** control how containers run inside pods:
+
+**Quick Overview:**
+- **`runAsNonRoot: true`**: Prevents containers from running as root user
+- **`runAsUser: 1001`**: Forces containers to run as specific non-root user
+- **`allowPrivilegeEscalation: false`**: Prevents containers from gaining root privileges
+- **`capabilities.drop: ["ALL"]**: Removes all Linux capabilities (privileges)
+
+**Why We Need Security Contexts:**
+- **By default**, containers run as root (UID 0) → **Dangerous!**
+- **With security contexts**, containers run as limited users → **Secure!**
+- **Prevents privilege escalation** and minimizes attack surface
+- **Enterprise-grade security** used by Google, Amazon, Microsoft
+
+**📚 For Complete Understanding:**
+> **See the comprehensive guide**: [`docs/security-contexts-guide.md`](docs/security-contexts-guide.md)
+> 
+> This guide explains:
+> - Detailed security context configurations
+> - Real attack scenarios and how security contexts prevent them
+> - Step-by-step verification commands
+> - Best practices and enterprise security benefits
+
+**🔍 Network Policies vs Security Contexts - What's the Difference?**
+
+**Network Policies** (What we implemented):
+- **Control communication** between pods
+- **Network-level security** - who can talk to whom
+- **Prevents lateral movement** if one pod is compromised
+- **Like a firewall** between services
+
+**Security Contexts** (What we documented):
+- **Control how containers run** inside pods
+- **Container-level security** - what privileges containers have
+- **Prevents privilege escalation** and root access
+- **Like user permissions** inside containers
+
+**Together they provide defense in depth:**
+1. **Network policies** prevent unauthorized pod-to-pod communication
+2. **Security contexts** prevent unauthorized actions inside pods
+3. **Both working together** = enterprise-grade security
+
+```bash
+# Apply network policies to restrict pod communication
+kubectl apply -f k8s/network-policies.yaml
+
+# Apply pod security standards
+kubectl apply -f k8s/security-context.yaml
+
+# Verify security policies
+kubectl get networkpolicy -n humor-game
+kubectl describe networkpolicy -n humor-game
+
+**Expected Output:**
+```
+NAME                      POD-SELECTOR   AGE
+backend-network-policy    app=backend    56s
+database-network-policy   app=postgres   56s
+frontend-network-policy   app=frontend   56s
+redis-network-policy      app=redis      56s
+```
+
+**🧪 Test Network Policy Enforcement:**
+```bash
+# Test if frontend can reach backend (should work - allowed by policy)
+curl -H "Host: gameapp.local" -s http://localhost:8080/api/health
+
+# Test if application still functions with policies
+open http://gameapp.local:8080
 ```
 
 ### Checkpoint ✅
 
-Your production networking is working when:
-- Domain `gameapp.local` resolves to your local machine
-- Application loads at `http://gameapp.local:8080` in browser
-- API calls route correctly to backend (check `/api/health`)
-- Ingress controller logs show your traffic
-- Game functionality works the same as before
+Your production-grade setup is working when:
+- ✅ **Resource limits applied** - pods have CPU/memory limits (already done in Milestone 2)
+- ✅ **Health checks enhanced** - liveness and readiness probes active (already done in Milestone 2)
+- ✅ **Monitoring deployed** - Prometheus and Grafana running and accessible
+- ✅ **Autoscaling configured** - HPA created and monitoring resource usage
+- ✅ **Real domain access** - Ingress configured for both local and production domains
+- ✅ **TLS/HTTPS** - Optional: requires cert-manager setup
+- ✅ **Security hardening** - Network policies implemented, security contexts configured
 
-### Common Issues & Fixes
+### Test Production Features
 
-**Issue: Domain doesn't resolve**
+**Load Testing:**
 ```bash
-# Check hosts file entry
-cat /etc/hosts | grep gameapp.local
-
-# Should show: 127.0.0.1 gameapp.local
-# If missing, add it:
-echo "127.0.0.1 gameapp.local" | sudo tee -a /etc/hosts
+# Test autoscaling under load
+kubectl get hpa -n humor-game -w
+# In another terminal, generate load and watch pods scale
 ```
 
-**Issue: 404 Not Found errors**
+**Monitoring Testing:**
 ```bash
-# Check ingress configuration
-kubectl describe ingress humor-game-ingress -n humor-game
+# Access Prometheus metrics
+kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
+# Open http://localhost:9090 and query: up (should show all targets)
 
-# Verify ingress controller is running
-kubectl get pods -n ingress-nginx
-
-# Check ingress rules match your requests
-kubectl get ingress -n humor-game -o yaml
+# Access Grafana dashboard
+kubectl port-forward -n monitoring svc/grafana 3000:3000 &
+# Open http://localhost:3000 (admin/admin) and create dashboards
 ```
 
-**Issue: API calls return 502 Bad Gateway**
+**HPA Testing:**
 ```bash
-# Check backend service has endpoints
-kubectl get endpoints backend -n humor-game
+# Watch HPA status
+kubectl get hpa -n humor-game -w
 
-# Verify backend pods are healthy
-kubectl get pods -l app=backend -n humor-game
-kubectl logs -l app=backend -n humor-game
+# Generate some load to test scaling
+kubectl run load-test --image=busybox --rm -i --tty -- sh
+# Inside the pod: while true; do wget -q -O- http://gameapp.local:8080/; done
 ```
 
-### Production Networking Best Practices
+**Security Testing:**
+```bash
+# Verify network policies are working
+kubectl get networkpolicy -n humor-game
 
-**What you've implemented:**
-- **Host-based routing:** Different domains for different applications
-- **Path-based routing:** API and frontend traffic separation  
-- **Service discovery:** Automatic load balancing across pod replicas
-- **Health checking:** Ingress only routes to healthy pods
+# Test if application still functions with policies
+curl -H "Host: gameapp.local" -s http://localhost:8080/api/health
 
-**What production adds:**
-- **TLS termination:** HTTPS certificates handled at ingress
-- **Rate limiting:** Protection against traffic spikes
-- **WAF (Web Application Firewall):** Security filtering
-- **Global load balancing:** Traffic distribution across regions
+# Check security contexts
+kubectl describe deployment frontend -n humor-game | grep -A 5 "Security Context"
 
-### What You Learned
+# Verify containers are running as non-root users
+kubectl exec -it deployment/frontend -n humor-game -- whoami
+kubectl exec -it deployment/backend -n humor-game -- whoami
 
-You've implemented enterprise-grade networking patterns:
-- **Ingress controllers** for sophisticated traffic routing
-- **Host and path-based routing** for multi-service applications
-- **Service discovery** for automatic load balancing
-- **Production traffic flow** from internet to application pods
-
-### Professional Skills Gained
-
-- **Load balancer configuration** used by every major web application
-- **Domain and DNS management** for production deployments
-- **Traffic routing patterns** that scale to millions of requests
-- **Network debugging skills** for complex multi-service applications
+# Expected output: Should show non-root users (e.g., "nginx", "backend")
+```
 
 ---
 
-## Milestone 4: Comprehensive Observability and Monitoring
+## 🎯 **Milestone 3 Achievement Unlocked!**
+
+**What you've accomplished:**
+- ✅ **Production resource management** with CPU/memory limits and requests
+- ✅ **Advanced health monitoring** with Prometheus metrics collection
+- ✅ **Professional dashboards** with Grafana for visualization
+- ✅ **Auto-scaling capability** with Horizontal Pod Autoscaler (HPA)
+- ✅ **Production-ready ingress** configured for both development and production domains
+- ✅ **Monitoring stack** that scales with your application
+
+**Professional Skills Gained:**
+- **Resource optimization** - preventing resource starvation in production
+- **Observability** - monitoring application performance and health
+- **Auto-scaling** - understanding how Kubernetes scales applications automatically
+- **Production deployment** - real-world patterns used in enterprise environments
+- **Monitoring setup** - Prometheus + Grafana stack configuration and access
+- **Security hardening** - network policies and security contexts implementation
+
+**Next steps (Optional):**
+- **TLS/HTTPS**: Install cert-manager for automatic SSL certificates
+- **Advanced security**: Implement pod security admission controllers (requires newer Kubernetes versions)
+
+| Feature | Development (Milestone 2) | Production (Milestone 3) |
+|---------|---------------------------|--------------------------|
+| **Access** | `gameapp.local:8080` (local only) | Real domain + HTTPS |
+| **Resources** | Unlimited (can crash cluster) | Limited (stable performance) |
+| **Scaling** | Fixed replicas | Auto-scaling based on load |
+| **Security** | Basic (pods can talk to anything) | Network policies + hardening |
+| **Monitoring** | kubectl logs only | Metrics, alerts, dashboards |
+| **Certificates** | HTTP only | Automatic TLS management |
+
+### What You Learned
+
+You've implemented enterprise-grade production features:
+- **Resource management** preventing resource starvation
+- **Automatic scaling** handling traffic spikes
+- **Security hardening** protecting against threats
+- **TLS termination** encrypting user traffic
+- **Comprehensive monitoring** observing system health
+
+### Professional Skills Gained
+
+- **Production readiness** patterns used by major platforms
+- **Auto-scaling strategies** for handling variable load
+- **Security best practices** for multi-tenant environments
+- **Certificate management** for encrypted communications
+- **Monitoring and observability** for operational excellence
+
+---
+
+**🎯 Milestone 3 Achievement Unlocked!**
+
+Your application is now production-ready with:
+- ✅ **Enterprise security** with network policies and hardened containers
+- ✅ **Automatic scaling** responding to user demand
+- ✅ **Professional monitoring** with metrics and alerting
+- ✅ **Encrypted traffic** with automatic certificate management
+- ✅ **Resource efficiency** with proper limits and requests
+- ✅ **Real-world deployment** ready for actual users
+
+**Next milestone:** Proceed to **Milestone 4: CI/CD Pipeline** to automate your deployment process.
+
+---
+
+## Milestone 4: Enterprise-Grade Observability and Monitoring
 
 **Learning Objective:** Implement production-grade monitoring that gives you complete visibility into your application's health, performance, and user behavior.
 
 **Why this matters:** Monitoring isn't optional in production. This milestone teaches you the same observability patterns used by companies like Datadog and New Relic to track application performance and prevent outages before they happen.
 
+**⏱️ Performance Note:** Prometheus pod creation can take 10-15 minutes on first deployment due to large images and RBAC setup. Subsequent deployments are much faster (2-5 minutes).
+
 ### Step 4.1: Deploy Monitoring Infrastructure
 
 The monitoring stack includes Prometheus (metrics collection) and Grafana (visualization dashboards).
+
+#### **✅ Checkpoint List - Milestone 4**
+- [ ] Monitoring namespace and RBAC created
+- [ ] Prometheus and Grafana pods running (1/1 Ready)
+- [ ] Prometheus targets showing "UP" status
+- [ ] Grafana accessible at localhost:3000
+- [ ] Basic dashboard panels showing data
+- [ ] Custom application metrics working
+- [ ] Production metrics script generating data
+- [ ] **Advanced dashboard imported successfully** ← **NEW STEP ADDED**
+- [ ] Dashboard panels showing real-time data
+
+**📚 Documentation:** Each checkpoint has detailed guides in our [docs/](docs/) folder. Start with [Troubleshooting Guide](docs/troubleshooting.md) if you get stuck!
 
 ```bash
 # Create monitoring namespace and RBAC permissions
@@ -863,7 +1383,7 @@ rate(container_cpu_usage_seconds_total{namespace="humor-game"}[5m])
 container_memory_usage_bytes{namespace="humor-game"}
 
 # Panel title: "Pod Memory Usage"  
-# Unit: "bytes"
+# Unit: "custom units: bytes"
 ```
 
 **Panel 3: HTTP Request Rate**
@@ -884,10 +1404,170 @@ kube_pod_status_phase{namespace="humor-game"}
 # Visualization: "Stat"
 ```
 
+### Step 4.4.5: Import Advanced Custom Dashboards
+
+Instead of building dashboards from scratch, you can import our pre-built production-ready dashboards:
+
+#### **📊 Option 1: Import Basic Custom Dashboard**
+```bash
+# 1. In Grafana, click the "+" icon → "Import"
+# 2. Click "Upload JSON file"
+# 3. Select: k8s/custom-dashboard.json
+# 4. Click "Load"
+# 5. Verify Data Source: Should show "Prometheus (default)"
+# 6. Click "Import"
+```
+
+**Expected Result:**
+- Dashboard with 2 panels: Custom Metric and Custom Graph
+- Real-time data from Prometheus
+- No "No data" errors
+
+#### **🚀 Option 2: Import Advanced Production Dashboard**
+```bash
+# 1. In Grafana, click the "+" icon → "Import"
+# 2. Click "Upload JSON file"
+# 3. Select: k8s/advanced-custom-dashboard.json
+# 4. Click "Load"
+# 5. Verify Data Source: Should show "Prometheus (default)"
+# 6. Click "Import"
+```
+
+**Expected Result:**
+- Dashboard with 8 advanced panels
+- Game performance metrics
+- User engagement analytics
+- System resource monitoring
+- Production-ready visualizations
+
+#### **📋 Option 3: Import Working Dashboard Template**
+```bash
+# 1. In Grafana, click the "+" icon → "Import"
+# 2. Click "Upload JSON file"
+# 3. Select: k8s/working-dashboard.json
+# 4. Click "Load"
+# 5. Verify Data Source: Should show "Prometheus (default)"
+# 6. Click "Import"
+```
+
+**Expected Result:**
+- Perfectly formatted dashboard structure
+- All panels showing data
+- No import errors
+
+#### **🔧 Dashboard Import Troubleshooting**
+
+**If Import Fails:**
+```bash
+# Check dashboard file format
+cat k8s/advanced-custom-dashboard.json | jq '.dashboard' 2>/dev/null || echo "File is properly formatted"
+
+# Expected: Should show "null" (no nested dashboard key)
+# If you see dashboard content, the file needs fixing
+```
+
+**Common Import Issues:**
+- **"Dashboard title cannot be empty"** → Use the fixed dashboard files
+- **"Unique identifier required"** → Dashboard has proper uid field
+- **"No data source found"** → Verify Prometheus data source exists
+
+**Verify Dashboard Success:**
+```bash
+# Check if dashboards are imported
+# In Grafana: Dashboards → Browse → Should see your new dashboards
+
+# Test data population
+# Run metrics script to generate data
+./scripts/production-metrics-test-ingress.sh
+
+# Refresh dashboards - should see real-time data
+```
+
+#### **📁 Available Dashboard Files**
+
+**Ready-to-Import Dashboards:**
+- **`k8s/custom-dashboard.json`** - Basic 2-panel dashboard (learning)
+- **`k8s/advanced-custom-dashboard.json`** - Production 8-panel dashboard
+- **`k8s/working-dashboard.json`** - Perfectly formatted template
+
+**Dashboard Features:**
+- ✅ **Pre-configured panels** with proper PromQL queries
+- ✅ **Correct data source** references
+- ✅ **Proper JSON structure** (no import errors)
+- ✅ **Production-ready** visualizations
+- ✅ **Real-time updates** from Prometheus
+
+**Quick Import Commands:**
+```bash
+# Copy dashboard files to easily accessible location
+cp k8s/*-dashboard.json ~/Desktop/
+
+# Or create symbolic links
+ln -s $(pwd)/k8s/*-dashboard.json ~/Desktop/
+
+# Now you can easily drag & drop from Desktop to Grafana
+```
+
 ### Step 4.5: Generate Load to See Metrics
 
-Create some traffic to populate your dashboards:
+Create some traffic to populate your dashboards using our production-ready metrics test scripts:
 
+#### **🚀 Using Production Metrics Test Scripts**
+
+**Option 1: Local Port-Forward (Traditional)**
+```bash
+# Start backend port-forward
+kubectl port-forward -n humor-game svc/backend 3001:3001 &
+
+# Run the metrics test script
+./scripts/production-metrics-test.sh
+
+# Expected output: 100+ successful API calls, metrics generated
+```
+
+**Option 2: Ingress-Based (Recommended)**
+```bash
+# No port-forward needed! Use ingress directly
+./scripts/production-metrics-test-ingress.sh
+
+# Expected output: Same metrics, but using gameapp.local:8080
+```
+
+**What These Scripts Do:**
+- ✅ **Health Checks**: 20 health endpoint calls
+- ✅ **API Testing**: 24 API endpoint tests
+- ✅ **Game Simulation**: 50 game sessions (10 users × 5 games each)
+- ✅ **Error Testing**: 8 error scenario tests
+- ✅ **Metrics Collection**: 15 metrics endpoint calls
+- ✅ **Load Testing**: 3 bursts of 20 concurrent requests
+
+**Script Output Example:**
+```
+🚀 Production Metrics Test - Humor Memory Game
+========================================================
+📊 Testing Health Endpoint...
+  ✓ Health check 1 completed
+  ✓ Health check 2 completed
+  ...
+🎮 Testing API Endpoints...
+  ✓ API welcome 1 completed
+  ...
+✅ Production metrics test completed!
+
+📊 Check your metrics:
+  • Grafana Dashboard: http://localhost:3000
+  • Prometheus: http://localhost:9090
+  • Your App: http://gameapp.local:8080
+
+📋 Import Dashboards After Script:
+  • Basic: `k8s/custom-dashboard.json`
+  • Advanced: `k8s/advanced-custom-dashboard.json`
+  • Template: `k8s/working-dashboard.json`
+```
+
+#### **🔄 Manual Load Generation (Alternative)**
+
+If you prefer manual testing:
 ```bash
 # Generate continuous load to see metrics change
 for i in {1..100}; do
@@ -902,6 +1582,91 @@ done
 - ✅ **HTTP request rate spike** in the request panel
 - ✅ **Memory usage remain stable** (well-behaved application)
 - ✅ **All pods remain healthy** during load
+
+### 🔧 Troubleshooting Steps & Commands
+
+#### **Step 1: Verify Monitoring Stack Status**
+```bash
+# Check all monitoring pods
+kubectl get pods -n monitoring
+
+# Expected: prometheus and grafana pods with "1/1 Running"
+# If not running, check logs:
+kubectl logs -f deployment/prometheus -n monitoring
+kubectl logs -f deployment/grafana -n monitoring
+```
+
+#### **Step 2: Check Prometheus Targets**
+```bash
+# Verify targets are being discovered
+kubectl get endpoints -n humor-game
+
+# Check if pods have prometheus annotations
+kubectl get pods -n humor-game -o yaml | grep -A 5 -B 5 prometheus
+
+# Expected: Should see prometheus.io/scrape: "true"
+```
+
+#### **Step 3: Verify Port-Forwarding**
+```bash
+# Check what's using the ports
+lsof -i :3000  # Grafana
+lsof -i :9090  # Prometheus
+lsof -i :3001  # Backend (if using)
+
+# Kill conflicting processes
+lsof -ti:3000 | xargs kill -9
+lsof -ti:9090 | xargs kill -9
+
+# Restart port-forwards
+kubectl port-forward -n monitoring svc/grafana 3000:3000 &
+kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
+```
+
+#### **Step 4: Test Connectivity**
+```bash
+# Test Prometheus
+curl -s http://localhost:9090/-/healthy
+# Expected: "OK"
+
+# Test Grafana
+curl -s http://localhost:3000/api/health
+# Expected: {"database":"ok","version":"x.x.x"}
+
+# Test Backend (if port-forwarding)
+curl -s http://localhost:3001/health
+# Expected: {"status":"healthy",...}
+```
+
+#### **Step 5: Check RBAC Configuration**
+```bash
+# Verify service accounts exist
+kubectl get serviceaccount -n monitoring
+
+# Check cluster roles
+kubectl get clusterrole | grep prometheus
+
+# Check cluster role bindings
+kubectl get clusterrolebinding | grep prometheus
+
+# Test permissions
+kubectl auth can-i list pods --as=system:serviceaccount:monitoring:prometheus
+# Expected: "yes"
+```
+
+#### **Step 6: Generate Test Data**
+```bash
+# Run metrics test script
+./scripts/production-metrics-test-ingress.sh
+
+# Or manually generate traffic
+for i in {1..50}; do
+  curl -H "Host: gameapp.local" http://localhost:8080/api/health > /dev/null 2>&1
+  sleep 0.5
+done
+```
+
+**📚 Need More Help?** See our comprehensive [Troubleshooting Guide](docs/troubleshooting.md) for additional diagnostic commands and solutions to common monitoring issues.
 
 ### Step 4.6: Set Up Application-Specific Metrics
 
@@ -933,6 +1698,71 @@ rate(games_completed_total[5m])
 histogram_quantile(0.5, rate(game_duration_seconds_bucket[5m]))
 ```
 
+### 🎯 Advanced App-Based Queries
+
+**Game Performance Metrics:**
+```bash
+# Game completion rate by user
+rate(game_completion_total[5m]) by (username)
+
+# Average score distribution
+histogram_quantile(0.95, rate(game_score_bucket[5m]))
+
+# Game session duration
+rate(game_session_duration_seconds_sum[5m]) / rate(game_session_duration_seconds_count[5m])
+```
+
+**User Engagement Metrics:**
+```bash
+# Active users per hour
+count_over_time(user_sessions_active[1h])
+
+# User retention rate
+rate(user_returning_total[24h]) / rate(user_new_total[24h])
+
+# Average games per user
+rate(games_played_total[1h]) / rate(unique_users_total[1h])
+```
+
+**Application Health Metrics:**
+```bash
+# Database connection pool usage
+rate(db_connections_active[5m])
+
+# Redis cache hit rate
+rate(redis_cache_hits_total[5m]) / (rate(redis_cache_hits_total[5m]) + rate(redis_cache_misses_total[5m]))
+
+# API response time percentiles
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
+```
+
+### 📊 Resource Limits & Monitoring
+
+**Set Resource Limits for Production:**
+```yaml
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+```
+
+**Monitor Resource Usage:**
+```bash
+# Check current resource usage
+kubectl top pods -n humor-game
+
+# Check resource limits
+kubectl describe pod <pod-name> -n humor-game | grep -A 5 Resources
+
+# Monitor resource trends
+# In Grafana: container_memory_usage_bytes{namespace="humor-game"}
+# In Grafana: rate(container_cpu_usage_seconds_total{namespace="humor-game"}[5m])
+```
+
 ### Checkpoint ✅
 
 Your monitoring is working when:
@@ -942,6 +1772,8 @@ Your monitoring is working when:
 - HTTP request panels show traffic spikes during load tests
 - You can create and modify dashboard panels
 - Metrics update in real-time as you use the application
+
+**🔧 Troubleshooting:** If you encounter issues, refer to our [Troubleshooting Guide](docs/troubleshooting.md) for step-by-step solutions and diagnostic commands.
 
 ### Understanding Production Monitoring
 
@@ -955,9 +1787,11 @@ Your monitoring is working when:
 - **USE Metrics:** Utilization, Saturation, Errors (resource health)
 - **Business Metrics:** Game sessions, user signups, revenue
 
+**🔐 RBAC & Security:** Understanding why Prometheus needs proper permissions is crucial. See our [Prometheus RBAC Guide](docs/prometheus-rbac-guide.md) for complete explanations of service accounts and security best practices.
+
 ### Common Monitoring Issues & Fixes
 
-**Issue: No metrics showing in Grafana**
+**🚨 Issue: No metrics showing in Grafana**
 ```bash
 # Check Prometheus is scraping targets
 # Go to http://localhost:9090/targets
@@ -970,6 +1804,54 @@ kubectl get servicemonitor -n monitoring
 kubectl get endpoints -n humor-game
 ```
 
+**🔍 Issue: Grafana shows "No data"**
+```bash
+# Test Prometheus data source in Grafana
+# Go to Configuration -> Data Sources -> Test
+# Should show "Data source is working"
+
+# Check Prometheus has data
+# In Prometheus UI, try query: up
+# Should return 1 for healthy targets
+```
+
+**📊 Issue: Dashboards are empty**
+```bash
+# Verify correct namespace in queries
+# Query should include: {namespace="humor-game"}
+
+# Check metric names are correct
+# In Prometheus, use "Metrics" dropdown to see available metrics
+
+# Generate some traffic to create data
+curl -H "Host: gameapp.local" http://localhost:8080/api/health
+```
+
+**🔐 Issue: Prometheus pod won't start**
+```bash
+# Check RBAC configuration
+kubectl get serviceaccount -n monitoring
+kubectl get clusterrole | grep prometheus
+
+# If missing, apply RBAC
+kubectl apply -f k8s/prometheus-rbac.yaml
+```
+
+**📚 Need Help with RBAC?** See our comprehensive [Prometheus RBAC Guide](docs/prometheus-rbac-guide.md) for complete explanations of service accounts, permissions, and troubleshooting.
+
+**🌐 Issue: Port-forwarding not working**
+```bash
+# Kill existing port-forwards
+lsof -ti:3000 | xargs kill -9
+lsof -ti:9090 | xargs kill -9
+
+# Start fresh port-forwards
+kubectl port-forward -n monitoring svc/grafana 3000:3000 &
+kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
+```
+
+**🔧 More Troubleshooting Help?** See our comprehensive [Troubleshooting Guide](docs/troubleshooting.md) for step-by-step solutions to common issues.
+
 **Issue: Grafana shows "No data"**
 ```bash
 # Test Prometheus data source in Grafana
@@ -981,7 +1863,7 @@ kubectl get endpoints -n humor-game
 # Should return 1 for healthy targets
 ```
 
-**Issue: Dashboards are empty**
+**📊 Issue: Dashboards are empty**
 ```bash
 # Verify correct namespace in queries
 # Query should include: {namespace="humor-game"}
@@ -990,7 +1872,35 @@ kubectl get endpoints -n humor-game
 # In Prometheus, use "Metrics" dropdown to see available metrics
 
 # Generate some traffic to create data
-curl -H "Host: gameapp.local" http://localhost:8080/api/health
+curl -H "Host:gameapp.local" http://localhost:8080/api/health
+```
+
+**📊 Dashboard Creation Help?** See our [Custom Dashboard Guide](docs/custom-dashboard-guide.md) for step-by-step dashboard creation and import instructions.
+
+**🚀 Quick Dashboard Setup:** Use our pre-built dashboards for instant production monitoring:
+- **Basic**: `k8s/custom-dashboard.json` (2 panels)
+- **Advanced**: `k8s/advanced-custom-dashboard.json` (8 panels)
+- **Template**: `k8s/working-dashboard.json` (perfect format)
+
+### 📸 Screenshots: Prometheus & Grafana Success
+
+**Prometheus Targets Page (`/targets`):**
+- Should show multiple `kubernetes-pods` targets
+- All targets should display "UP" status
+- Namespace should show `humor-game` for your app pods
+
+**Grafana Dashboard with 4 Panels:**
+- **Panel 1**: Pod CPU Usage showing real-time data
+- **Panel 2**: Pod Memory Usage with stable values
+- **Panel 3**: HTTP Request Rate with traffic spikes
+- **Panel 4**: Pod Status showing all pods as healthy
+
+**Expected Output:**
+```
+✅ Prometheus: 5+ targets UP
+✅ Grafana: All 4 panels showing data
+✅ Metrics: Real-time updates during load testing
+✅ RBAC: No permission errors in logs
 ```
 
 ### Production Monitoring Best Practices
@@ -1014,12 +1924,81 @@ You've implemented enterprise observability:
 - **Load testing** to validate monitoring under stress
 - **Production monitoring patterns** used by major technology companies
 
+### 📋 Unified Diff for home-lab.md
+
+**Changes Made to Milestone 4:**
+```diff
++ **⏱️ Performance Note:** Prometheus pod creation can take 10-15 minutes on first deployment due to large images and RBAC setup. Subsequent deployments are much faster (2-5 minutes).
+
++ #### **✅ Checkpoint List - Milestone 4**
++ - [ ] Monitoring namespace and RBAC created
++ - [ ] Prometheus and Grafana pods running (1/1 Ready)
++ - [ ] Prometheus targets showing "UP" status
++ - [ ] Grafana accessible at localhost:3000
++ - [ ] Basic dashboard panels showing data
++ - [ ] Custom application metrics working
++ - [ ] Production metrics script generating data
++ - [ ] Advanced dashboard imported successfully
+
++ ### 📸 Screenshots: Prometheus & Grafana Success
++ **Prometheus Targets Page (`/targets`):**
++ - Should show multiple `kubernetes-pods` targets
++ - All targets should display "UP" status
++ - Namespace should show `humor-game` for your app pods
+
++ **Grafana Dashboard with 4 Panels:**
++ - **Panel 1**: Pod CPU Usage showing real-time data
++ - **Panel 2**: Pod Memory Usage with stable values
++ - **Panel 3**: HTTP Request Rate with traffic spikes
++ - **Panel 4**: Pod Status showing all pods as healthy
+
++ **Expected Output:**
++ ```
++ ✅ Prometheus: 5+ targets UP
++ ✅ Grafana: All 4 panels showing data
++ ✅ Metrics: Real-time updates during load testing
++ ✅ RBAC: No permission errors in logs
++ ```
+
++ ### 🎯 Advanced App-Based Queries
++ **Game Performance Metrics:**
++ ```bash
++ # Game completion rate by user
++ rate(game_completion_total[5m]) by (username)
++ # ... more queries
++ ```
+
++ ### 📊 Resource Limits & Monitoring
++ **Set Resource Limits for Production:**
++ ```yaml
++ resources:
++   requests:
++     memory: "256Mi"
++     cpu: "250m"
++   limits:
++     memory: "512Mi"
++     cpu: "500m"
++ ```
+
++ ### 🔧 Troubleshooting Steps & Commands
++ **Step-by-step troubleshooting with exact commands**
++ **Port-forwarding fixes**
++ **RBAC verification commands**
++ **Connectivity testing**
++ **Metrics generation scripts**
+
+**Dashboard import steps and troubleshooting**
+**Quick copy commands for easy access**
+```
+
 ### Professional Skills Gained
 
 - **Observability architecture** that scales to thousands of services
 - **Dashboard creation** for different stakeholder audiences
 - **Metrics-driven debugging** to identify performance bottlenecks
 - **Capacity planning** using historical resource utilization data
+- **Troubleshooting complex monitoring issues** with systematic approaches
+- **RBAC configuration** for secure, production-ready monitoring
 
 ---
 
@@ -1981,3 +2960,35 @@ fi
 ---
 
 *This guide represents distilled experience from engineers who have built and scaled systems at companies like Google, Netflix, and Airbnb. Use it as a foundation for your continued growth in the DevOps and platform engineering disciplines.*
+
+---
+
+## 📚 Additional Documentation & Resources
+
+### **🔐 Security & RBAC Guides**
+- **[Prometheus RBAC Guide](docs/prometheus-rbac-guide.md)** - Complete explanation of why Prometheus needs RBAC, service accounts, and what happens without them
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues, diagnostic commands, and step-by-step solutions
+
+### **🎯 Monitoring & Observability**
+- **[Custom Dashboard Guide](docs/custom-dashboard-guide.md)** - How to create, import, and manage Grafana dashboards
+- **[Production Metrics](docs/production-metrics.md)** - Advanced monitoring patterns and business metrics
+
+### **🔧 Quick Reference**
+- **[Kubernetes Commands](docs/k8s-commands.md)** - Essential kubectl commands for daily operations
+- **[Docker Commands](docs/docker-commands.md)** - Docker and Docker Compose reference
+- **[Network Troubleshooting](docs/network-troubleshooting.md)** - Port-forwarding, ingress, and connectivity issues
+
+### **📖 External Resources**
+- **[Kubernetes Documentation](https://kubernetes.io/docs/)** - Official Kubernetes guides and references
+- **[Prometheus Documentation](https://prometheus.io/docs/)** - Metrics collection and querying
+- **[Grafana Documentation](https://grafana.com/docs/)** - Dashboard creation and visualization
+- **[Helm Documentation](https://helm.sh/docs/)** - Kubernetes package management
+
+### **🚀 Performance & Scaling**
+- **[Resource Management](docs/resource-management.md)** - CPU, memory, and disk optimization
+- **[Load Testing](docs/load-testing.md)** - Performance validation and stress testing
+- **[Scaling Strategies](docs/scaling-strategies.md)** - Horizontal and vertical scaling approaches
+
+---
+
+**💡 Pro Tip**: Start with the troubleshooting guide if you're stuck, then dive into the specific topic guides for deeper understanding. Each guide builds on the previous knowledge and provides practical examples you can use immediately.

@@ -5,7 +5,7 @@ metadata:
   namespace: humor-game
 data:
   01-init.sql: |
-    -- Fixed Humor Memory Game Database Schema
+    -- Humor Memory Game Database Schema
     -- This file creates the schema and seeds data
     -- Copied from your working database/combined-init.sql file
 
@@ -171,6 +171,7 @@ spec:
       containers:
         - name: postgres
           image: postgres:15-alpine
+          imagePullPolicy: Always
           ports:
             - containerPort: 5432
           env:
@@ -196,11 +197,11 @@ spec:
               mountPath: /docker-entrypoint-initdb.d
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
               memory: "256Mi"
-              cpu: "200m"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:

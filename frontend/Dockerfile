@@ -24,8 +24,9 @@ RUN apk add --no-cache netcat-openbsd
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy custom nginx config
+# Copy custom nginx config (force fresh copy)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+RUN echo "nginx.conf updated at $(date)" > /tmp/nginx-build-time
 
 # Install envsubst for environment variable substitution
 RUN apk add --no-cache gettext
