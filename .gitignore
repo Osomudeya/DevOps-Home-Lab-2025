@@ -1,128 +1,128 @@
-# # ========================================
-# # GENERAL PROJECT STRUCTURE
-# # ========================================
-# node_modules/
-# dist/
-# build/
-# out/
-# .env
-# .env.*
-# !.env.example
-# .DS_Store
-# Thumbs.db
-# *.log
-# *.pid
-# *.seed
-# tmp/
-# temp/
-# .cache/
-# coverage/
-# .nyc_output/
-# logs/
-# *.bak
-# *.backup
-# *.old
-# *.orig
-# .vscode/
-# .idea/
+# ========================================
+# GENERAL PROJECT STRUCTURE
+# ========================================
+node_modules/
+dist/
+build/
+out/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+*.log
+*.pid
+*.seed
+tmp/
+temp/
+.cache/
+coverage/
+.nyc_output/
+logs/
+*.bak
+*.backup
+*.old
+*.orig
+.vscode/
+.idea/
 
-# # ========================================
-# # FRONTEND
-# # ========================================
-# frontend/node_modules/
-# frontend/dist/
-# frontend/.cache/
-# frontend/.parcel-cache/
-# frontend/.eslintcache
+# ========================================
+# FRONTEND
+# ========================================
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+frontend/.parcel-cache/
+frontend/.eslintcache
 
-# # ========================================
-# # BACKEND
-# # ========================================
-# backend/node_modules/
-# backend/.eslintcache
-# backend/coverage/
-# backend/logs/
-# backend/jest_cache/
-# backend/.env
-# backend/.env.*
+# ========================================
+# BACKEND
+# ========================================
+backend/node_modules/
+backend/.eslintcache
+backend/coverage/
+backend/logs/
+backend/jest_cache/
+backend/.env
+backend/.env.*
 
-# # ========================================
-# # DATABASE
-# # ========================================
-# database/*.backup
-# database/*.dump
-# pgdata/
-# *.sqlite
-# *.sqlite3
-# *.db
+# ========================================
+# DATABASE
+# ========================================
+database/*.backup
+database/*.dump
+pgdata/
+*.sqlite
+*.sqlite3
+*.db
 
-# # ========================================
-# # DOCKER
-# # ========================================
-# docker-compose.override.yml
-# .docker/
-# docker-logs/
+# ========================================
+# DOCKER
+# ========================================
+docker-compose.override.yml
+.docker/
+docker-logs/
 
-# # ========================================
-# # KUBERNETES / CLOUD / DEVOPS
-# # ========================================
-# # Terraform
-# *.tfstate
-# *.tfstate.*
-# .terraform/
-# .terraform.lock.hcl
-# terraform.tfvars*
-# # Kubernetes
-# kubeconfig
-# *.kubeconfig
-# # Secrets
-# secrets/
-# *.pem
-# *.crt
-# *.key
-# *.pfx
-# *.p12
-# id_rsa
-# id_rsa.pub
-# # Cloud
-# .azure/
-# .aws/
-# .gcloud/
-# service-account.json
-# .vault_pass
-# .vagrant/
+# ========================================
+# KUBERNETES / CLOUD / DEVOPS
+# ========================================
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars*
+# Kubernetes
+kubeconfig
+*.kubeconfig
+# Secrets
+secrets/
+*.pem
+*.crt
+*.key
+*.pfx
+*.p12
+id_rsa
+id_rsa.pub
+# Cloud
+.azure/
+.aws/
+.gcloud/
+service-account.json
+.vault_pass
+.vagrant/
 
-# # ========================================
-# # CI/CD
-# # ========================================
-# !.github/
-# !.github/workflows/
-# !.gitlab-ci.yml
-# !azure-pipelines.yml
+# ========================================
+# CI/CD
+# ========================================
+!.github/
+!.github/workflows/
+!.gitlab-ci.yml
+!azure-pipelines.yml
 
-# # ========================================
-# # GAME & PROJECT SPECIFIC
-# # ========================================
-# game-data-export/
-# user-data-backup/
-# performance-reports/
-# load-test-results/
-# docs/build/
-# api-docs/generated/
-# nginx/conf.d/*.local.conf
-# traefik/*.local.yml
+# ========================================
+# GAME & PROJECT SPECIFIC
+# ========================================
+game-data-export/
+user-data-backup/
+performance-reports/
+load-test-results/
+docs/build/
+api-docs/generated/
+nginx/conf.d/*.local.conf
+traefik/*.local.yml
 
-# # ========================================
-# # EXCEPTIONS (KEEP THESE FILES)
-# # ========================================
-# !README.md
-# !Dockerfile
-# !docker-compose.yml
-# !.dockerignore
-# !CHANGELOG.md
-# !LICENSE
-# !database/init.sql
-# !database/seed.sql
+# ========================================
+# EXCEPTIONS (KEEP THESE FILES)
+# ========================================
+!README.md
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
+!CHANGELOG.md
+!LICENSE
+!database/init.sql
+!database/seed.sql
 
 
-# backend.log
+backend.log
