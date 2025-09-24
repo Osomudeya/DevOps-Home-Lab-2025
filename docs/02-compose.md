@@ -1,11 +1,11 @@
+
 # Docker Tutorial: Build Your First Multi-Container App
 
-_Learn containerization by running a real application with multiple services_
+*Learn containerization by running a real application with multiple services*
 
 ## 🎯 **What You'll Learn**
 
 By the end of this tutorial, you'll know how to:
-
 - **Run multiple services** together using Docker Compose
 - **Connect databases** to your application
 - **Test application functionality** before complex deployment
@@ -34,7 +34,6 @@ docker compose build
 ```
 
 **Expected Output:**
-
 ```bash
 Building backend
 Step 1/12 : FROM node:18-alpine
@@ -62,7 +61,6 @@ docker-compose up -d
 ```
 
 **Expected Output:**
-
 ```bash
 Creating network "game-app-laptop-demo_default" ... done
 Creating game-app-laptop-demo_postgres_1 ... done
@@ -84,7 +82,6 @@ docker-compose ps
 ```
 
 **Expected Output:**
-
 ```bash
 NAME                       IMAGE                           STATUS                    PORTS
 game-app-laptop-demo_postgres_1   postgres:15-alpine              Up 13 minutes            5432/tcp
@@ -103,14 +100,12 @@ Open your web browser and navigate to `http://localhost:3000`. You should see:
 - ✅ **No connection errors** in the browser console (F12 to check)
 
 **Test the full workflow:**
-
 ```bash
 # Test backend API health
 curl http://localhost:3001/health
 ```
 
 **Expected Output:**
-
 ```json
 {
   "status": "healthy",
@@ -129,23 +124,22 @@ curl http://localhost:3000/
 ```
 
 **Expected Output:**
-
 ```html
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Humor Memory Game</title>
-    <link rel="stylesheet" href="/styles/main.css" />
-  </head>
-  <body>
+    <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
     <div id="app">
-      <h1>Humor Memory Game</h1>
-      <!-- Game content -->
+        <h1>Humor Memory Game</h1>
+        <!-- Game content -->
     </div>
     <script src="/scripts/game.js"></script>
-  </body>
+</body>
 </html>
 ```
 
@@ -155,7 +149,6 @@ docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT ve
 ```
 
 **Expected Output:**
-
 ```bash
                                                              version
 ----------------------------------------------------------------------------------------------------------------
@@ -171,7 +164,6 @@ docker-compose exec backend env | grep -E "(DB_|REDIS_|NODE_ENV|PORT|API_BASE_UR
 ```
 
 **Expected Output:**
-
 ```bash
 DB_HOST=postgres
 DB_PORT=5432
@@ -189,7 +181,6 @@ API_BASE_URL=/api
 ## You Should See...
 
 **Service Status:**
-
 ```bash
 NAME                       IMAGE                           STATUS                    PORTS
 humor-game-postgres        postgres:15-alpine              Up 13 minutes            5432/tcp
@@ -199,7 +190,6 @@ humor-game-frontend        game-app-laptop-demo-frontend   Up 6 minutes (healthy
 ```
 
 **Backend Health Check:**
-
 ```json
 {
   "status": "healthy",
@@ -212,24 +202,22 @@ humor-game-frontend        game-app-laptop-demo-frontend   Up 6 minutes (healthy
 ```
 
 **Frontend Response:**
-
 ```html
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <title>Humor Memory Game</title>
     <!-- Game interface loads without errors -->
-  </head>
-  <body>
+</head>
+<body>
     <!-- Game content visible -->
-  </body>
+</body>
 </html>
 ```
 
 ## ✅ Checkpoint
 
 Your Docker Compose application is working when:
-
 - ✅ All 4 containers show "Up" status in `docker-compose ps`
 - ✅ Frontend loads at `http://localhost:3000` without errors
 - ✅ You can start a game and see emoji cards
@@ -240,11 +228,9 @@ Your Docker Compose application is working when:
 ## If It Fails
 
 ### Symptom: Containers keep restarting
-
 **Cause:** Health check failures or dependency issues
 **Command to confirm:** `docker-compose logs postgres` or `docker-compose logs redis`
 **Fix:**
-
 ```bash
 # Check logs for the problematic service
 docker-compose logs backend
@@ -257,11 +243,9 @@ sleep 60  # Give more time for startup
 ```
 
 ### Symptom: Frontend shows "Cannot connect to game server"
-
 **Cause:** Backend service not accessible
 **Command to confirm:** `curl http://localhost:3001/health`
 **Fix:**
-
 ```bash
 # Verify backend is accessible
 curl http://localhost:3001/health
@@ -274,11 +258,9 @@ docker-compose restart backend
 ```
 
 ### Symptom: Database connection failed
-
 **Cause:** PostgreSQL not ready or credentials wrong
 **Command to confirm:** `docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT 1;"`
 **Fix:**
-
 ```bash
 # Check database logs
 docker-compose logs postgres
@@ -291,11 +273,9 @@ docker-compose exec postgres env | grep POSTGRES
 ```
 
 ### Symptom: Redis connection failed
-
 **Cause:** Redis service not ready or password wrong
 **Command to confirm:** `docker-compose exec redis redis-cli -a your_redis_password_here ping`
 **Fix:**
-
 ```bash
 # Test Redis connectivity
 docker-compose exec redis redis-cli -a your_redis_password_here ping
@@ -349,7 +329,6 @@ docker-compose ps
 ## What You Learned
 
 You've confirmed that your application works correctly in containers, including:
-
 - **Multi-service orchestration** with Docker Compose
 - **Database connectivity** between application and PostgreSQL (humor_memory_game)
 - **Caching integration** with Redis (port 6379)
@@ -364,4 +343,4 @@ You've confirmed that your application works correctly in containers, including:
 
 ---
 
-_Docker Compose milestone completed successfully. All services running and healthy, ready for [03-k8s-basics.md](03-k8s-basics.md)._
+*Docker Compose milestone completed successfully. All services running and healthy, ready for [03-k8s-basics.md](03-k8s-basics.md).*
