@@ -57,7 +57,7 @@ Successfully tagged game-app-laptop-demo-frontend:latest
 
 ```bash
 # Start all services in background
-docker-compose up -d
+docker compose up -d
 ```
 
 **Expected Output:**
@@ -78,7 +78,7 @@ sleep 30
 
 ```bash
 # Check that all containers are running
-docker-compose ps
+docker compose ps
 ```
 
 **Expected Output:**
@@ -145,7 +145,7 @@ curl http://localhost:3000/
 
 ```bash
 # Test database connectivity
-docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT version();"
+docker compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT version();"
 ```
 
 **Expected Output:**
@@ -160,7 +160,7 @@ docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT ve
 
 ```bash
 # Check environment variables are set correctly
-docker-compose exec backend env | grep -E "(DB_|REDIS_|NODE_ENV|PORT|API_BASE_URL)"
+docker compose exec backend env | grep -E "(DB_|REDIS_|NODE_ENV|PORT|API_BASE_URL)"
 ```
 
 **Expected Output:**
@@ -218,7 +218,7 @@ humor-game-frontend        game-app-laptop-demo-frontend   Up 6 minutes (healthy
 ## ✅ Checkpoint
 
 Your Docker Compose application is working when:
-- ✅ All 4 containers show "Up" status in `docker-compose ps`
+- ✅ All 4 containers show "Up" status in `docker compose ps`
 - ✅ Frontend loads at `http://localhost:3000` without errors
 - ✅ You can start a game and see emoji cards
 - ✅ API health endpoint returns success
@@ -229,16 +229,16 @@ Your Docker Compose application is working when:
 
 ### Symptom: Containers keep restarting
 **Cause:** Health check failures or dependency issues
-**Command to confirm:** `docker-compose logs postgres` or `docker-compose logs redis`
+**Command to confirm:** `docker compose logs postgres` or `docker compose logs redis`
 **Fix:**
 ```bash
 # Check logs for the problematic service
-docker-compose logs backend
-docker-compose logs postgres
+docker compose logs backend
+docker compose logs postgres
 
 # Common fix: Wait longer for database initialization
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 sleep 60  # Give more time for startup
 ```
 
@@ -251,40 +251,40 @@ sleep 60  # Give more time for startup
 curl http://localhost:3001/health
 
 # Check backend logs for errors
-docker-compose logs backend
+docker compose logs backend
 
 # Restart just the backend if needed
-docker-compose restart backend
+docker compose restart backend
 ```
 
 ### Symptom: Database connection failed
 **Cause:** PostgreSQL not ready or credentials wrong
-**Command to confirm:** `docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT 1;"`
+**Command to confirm:** `docker compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT 1;"`
 **Fix:**
 ```bash
 # Check database logs
-docker-compose logs postgres
+docker compose logs postgres
 
-# Verify credentials match docker-compose.yml
-docker-compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT 1;"
+# Verify credentials match docker compose.yml
+docker compose exec postgres psql -U gameuser -d humor_memory_game -c "SELECT 1;"
 
 # If still failing, check environment variables
-docker-compose exec postgres env | grep POSTGRES
+docker compose exec postgres env | grep POSTGRES
 ```
 
 ### Symptom: Redis connection failed
 **Cause:** Redis service not ready or password wrong
-**Command to confirm:** `docker-compose exec redis redis-cli -a your_redis_password_here ping`
+**Command to confirm:** `docker compose exec redis redis-cli -a your_redis_password_here ping`
 **Fix:**
 ```bash
 # Test Redis connectivity
-docker-compose exec redis redis-cli -a your_redis_password_here ping
+docker compose exec redis redis-cli -a your_redis_password_here ping
 
 # Check Redis logs
-docker-compose logs redis
+docker compose logs redis
 
-# Verify password in docker-compose.yml matches
-docker-compose exec redis redis-cli -a your_redis_password_here ping
+# Verify password in docker compose.yml matches
+docker compose exec redis redis-cli -a your_redis_password_here ping
 ```
 
 ## 💡 **Reset/Rollback Commands**
@@ -293,36 +293,36 @@ If you need to start over or fix issues:
 
 ```bash
 # Stop all services
-docker-compose down
+docker compose down
 
 # Remove all containers and networks
-docker-compose down --remove-orphans
+docker compose down --remove-orphans
 
 # Remove all containers, networks, and volumes (nuclear option)
-docker-compose down -v --remove-orphans
+docker compose down -v --remove-orphans
 
 # Rebuild and restart specific service
-docker-compose up -d --build backend
+docker compose up -d --build backend
 
 # View logs for troubleshooting
-docker-compose logs -f backend
-docker-compose logs -f postgres
+docker compose logs -f backend
+docker compose logs -f postgres
 
 # Reset database (if corrupted)
-docker-compose down -v
-docker-compose up -d postgres
+docker compose down -v
+docker compose up -d postgres
 sleep 30
-docker-compose up -d
+docker compose up -d
 ```
 
 ## Clean Up Before Moving Forward
 
 ```bash
 # Stop all services (but keep data)
-docker-compose down
+docker compose down
 
 # Verify everything is stopped
-docker-compose ps
+docker compose ps
 # Should show no running containers
 ```
 
