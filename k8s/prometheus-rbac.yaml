@@ -11,8 +11,7 @@ rules:
   - endpoints
   - pods
   verbs: ["get", "list", "watch"]
-- apiGroups:
-  - extensions
+- apiGroups: ["networking.k8s.io"]
   resources:
   - ingresses
   verbs: ["get", "list", "watch"]
